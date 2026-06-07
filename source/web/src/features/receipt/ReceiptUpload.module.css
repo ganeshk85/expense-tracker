@@ -1,0 +1,120 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dropzone {
+  border: 2px dashed #d1d5db;
+  border-radius: 0.75rem;
+  padding: 2.5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+  min-height: 180px;
+  background-color: #f9fafb;
+}
+
+.dropzone:hover {
+  border-color: #6366f1;
+  background-color: #eef2ff;
+}
+
+.dragging {
+  border-color: #6366f1;
+  background-color: #eef2ff;
+}
+
+.uploading {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid #e5e7eb;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.thumbnail {
+  max-width: 120px;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: 0.375rem;
+  border: 1px solid #e5e7eb;
+}
+
+.previewLabel {
+  font-size: 0.875rem;
+  color: #059669;
+  font-weight: 500;
+}
+
+.prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: #9ca3af;
+}
+
+.promptText {
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.promptLink {
+  color: #6366f1;
+  font-weight: 500;
+}
+
+.promptHint {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.error {
+  font-size: 0.875rem;
+  color: #dc2626;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+}

@@ -1,0 +1,85 @@
+services:
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: expense_tracker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./source/api
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=expense_tracker;Username=postgres;Password=postgres;SslMode=Disable"
+      ConnectionStrings__Redis: "redis:6379"
+      AllowedOrigins: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      Storage__ReceiptsPath: /storage/receipts
+      Storage__ThumbnailsPath: /storage/thumbnails
+      Storage__OcrJsonPath: /storage/ocr-json
+      Storage__AttachmentsPath: /storage/attachments
+    ports:
+      - "5000:8080"
+    volumes:
+      - storage_data:/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ocr-worker:
+    build:
+      context: ./source/ocr
+      dockerfile: Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      API_BASE_URL: http://api:8080
+      STORAGE_RECEIPTS_PATH: /storage/receipts
+      STORAGE_THUMBNAILS_PATH: /storage/thumbnails
+    volumes:
+      - storage_data:/storage
+    depends_on:
+      - api
+      - redis
+
+  web:
+    build:
+      context: ./source/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:
