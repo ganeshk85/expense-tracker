@@ -63,8 +63,10 @@ services:
     volumes:
       - storage_data:/storage
     depends_on:
-      - api
-      - redis
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
 
   web:
     build:

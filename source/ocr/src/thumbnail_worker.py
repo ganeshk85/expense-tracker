@@ -8,6 +8,7 @@ from pathlib import Path
 
 import httpx
 import redis.asyncio as aioredis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from PIL import Image
 
 from .config import Settings
@@ -34,6 +35,8 @@ class ThumbnailWorker:
                     continue
                 _, payload = item
                 await self._process(json.loads(payload))
+            except RedisTimeoutError:
+                continue  # brpop block expired — queue empty, poll again
             except Exception:
                 logger.exception("Unhandled error in thumbnail worker loop")
                 await asyncio.sleep(_POLL_INTERVAL)

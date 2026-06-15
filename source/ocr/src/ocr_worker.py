@@ -31,6 +31,7 @@ import cv2
 import numpy as np
 import pytesseract
 import redis.asyncio as aioredis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from PIL import Image
 from pytesseract import Output
 
@@ -110,6 +111,8 @@ class OcrWorker:
                 for _stream, messages in entries:
                     for message_id, fields in messages:
                         await self._process(message_id, fields)
+            except RedisTimeoutError:
+                continue  # xreadgroup block expired — no jobs, poll again
             except Exception:
                 logger.exception("Unhandled error in OCR worker loop")
                 await asyncio.sleep(1)

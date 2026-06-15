@@ -48,6 +48,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(a => a.AfterJson).HasColumnType("jsonb");
             // CreatedAt defaults to now() at the DB level; EF should not set it on insert.
             e.Property(a => a.CreatedAt).HasDefaultValueSql("now()");
+            e.HasIndex(a => a.Action);
+            e.HasIndex(a => new { a.UserId, a.CreatedAt });
         });
 
         modelBuilder.Entity<Expense>(e =>
@@ -60,6 +62,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.TaxAmount).HasColumnType("numeric(18,4)");
             e.Property(x => x.Total).HasColumnType("numeric(18,4)");
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            e.HasOne<ReceiptEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.ReceiptId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ReceiptId).IsUnique();
+            e.HasIndex(x => x.UserId);
             e.HasMany(x => x.Items)
              .WithOne()
              .HasForeignKey(i => i.ExpenseId)
