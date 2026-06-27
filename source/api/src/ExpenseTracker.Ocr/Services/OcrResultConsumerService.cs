@@ -139,9 +139,19 @@ public sealed class OcrResultConsumerService(
             {
                 await HandleCompleteResultAsync(result, receiptId, expenseRepo, receiptRepo, ct);
             }
-            else
+            else if (result.Status == OcrResultStatus.OcrFailed)
             {
                 await HandleFailedResultAsync(receiptId, receiptRepo, ct);
+            }
+            else if (result.Status.StartsWith("processing (retry", StringComparison.OrdinalIgnoreCase))
+            {
+                // Retry-in-progress status from the OCR worker — increment retry count for UI polling.
+                await HandleRetryStatusAsync(receiptId, receiptRepo, ct);
+            }
+            else
+            {
+                logger.LogWarning("Unknown OCR result status '{Status}' for receipt {ReceiptId} — skipping",
+                    result.Status, receiptId);
             }
 
             // XACK — tell Redis this message was processed successfully.
@@ -149,7 +159,6 @@ public sealed class OcrResultConsumerService(
         }
         catch (Exception ex)
         {
-            // Log but still ACK to avoid infinite retry loops (retry logic is Sprint 1 stretch).
             logger.LogError(ex, "Failed to process OCR result message {Id} — ACKing to prevent requeue", messageId);
             await db.StreamAcknowledgeAsync(OcrStreams.ResultsStream, OcrStreams.ConsumerGroup, message.Id);
         }
@@ -168,6 +177,10 @@ public sealed class OcrResultConsumerService(
         {
             parsedDate = d;
         }
+
+        var confidenceJson = result.Confidence is { Count: > 0 }
+            ? JsonSerializer.Serialize(result.Confidence)
+            : null;
 
         // Load the receipt to resolve the owning user.
         var receipt = await receiptRepo.FindByIdAsync(receiptId, ct);
@@ -188,6 +201,7 @@ public sealed class OcrResultConsumerService(
                 TaxAmount = result.TaxAmount,
                 Total = result.Total,
                 Barcode = result.Barcode,
+                ConfidenceJson = confidenceJson,
                 OcrStatus = OcrStatusValue.Complete,
                 Source = ExpenseSource.Ocr,
                 Items = MapLineItems(result.LineItems),
@@ -204,6 +218,7 @@ public sealed class OcrResultConsumerService(
             existing.TaxAmount = result.TaxAmount;
             existing.Total = result.Total;
             existing.Barcode = result.Barcode;
+            existing.ConfidenceJson = confidenceJson;
             existing.OcrStatus = OcrStatusValue.Complete;
             existing.UpdatedAt = DateTimeOffset.UtcNow;
             existing.Items = MapLineItems(result.LineItems);
@@ -230,6 +245,23 @@ public sealed class OcrResultConsumerService(
         if (receipt is not null)
         {
             receipt.Status = ReceiptStatus.OcrFailed;
+            receipt.OcrRetryCount = 3;
+            receipt.UpdatedAt = DateTimeOffset.UtcNow;
+            await receiptRepo.SaveChangesAsync(ct);
+        }
+    }
+
+    private static async Task HandleRetryStatusAsync(
+        Guid receiptId,
+        IReceiptRepository receiptRepo,
+        CancellationToken ct)
+    {
+        var receipt = await receiptRepo.FindByIdAsync(receiptId, ct);
+        if (receipt is not null)
+        {
+            // Status stays Processing; OcrRetryCount is exposed by GET /receipts/{id}/status
+            // so the frontend can render "Processing (retry X of 3)".
+            receipt.OcrRetryCount++;
             receipt.UpdatedAt = DateTimeOffset.UtcNow;
             await receiptRepo.SaveChangesAsync(ct);
         }

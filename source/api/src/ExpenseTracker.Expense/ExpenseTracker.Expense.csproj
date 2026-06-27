@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ExpenseTracker.Ocr\ExpenseTracker.Ocr.csproj" />
+    <ProjectReference Include="..\ExpenseTracker.Audit\ExpenseTracker.Audit.csproj" />
+    <ProjectReference Include="..\ExpenseTracker.Shared\ExpenseTracker.Shared.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,16 +1,11 @@
 namespace ExpenseTracker.Ocr.Entities;
 
-/// <summary>
-/// Expense record hydrated from OCR output.
-/// Full CRUD (categories, tags, notes, shared) is Sprint 3.
-/// This entity captures only the fields the OCR worker can extract.
-/// </summary>
 public sealed class Expense
 {
     public Guid Id { get; init; } = Guid.NewGuid();
 
-    /// <summary>FK to receipts table. One-to-one for OCR source.</summary>
-    public Guid ReceiptId { get; set; }
+    /// <summary>Null for manually-created expenses that have no associated receipt.</summary>
+    public Guid? ReceiptId { get; set; }
 
     public Guid UserId { get; set; }
 
@@ -29,10 +24,19 @@ public sealed class Expense
 
     public string? Barcode { get; set; }
 
-    /// <summary>OCR processing state: "processing" | "complete" | "ocr_failed".</summary>
+    public string? Category { get; set; }
+    public string[] Tags { get; set; } = [];
+    public string? Notes { get; set; }
+
+    /// <summary>
+    /// OCR per-field confidence as JSON object: {"merchantName":85,"date":90,"total":85}.
+    /// Null for manually-created expenses. Not shown after user confirms the expense.
+    /// </summary>
+    public string? ConfidenceJson { get; set; }
+
+    /// <summary>OCR processing state: "processing" | "complete" | "ocr_failed" | "manual".</summary>
     public string OcrStatus { get; set; } = OcrStatusValue.Processing;
 
-    /// <summary>Always "OCR" for records created by this worker. "Manual" for Sprint 3.</summary>
     public string Source { get; set; } = ExpenseSource.Ocr;
 
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
@@ -46,6 +50,7 @@ public static class OcrStatusValue
     public const string Processing = "processing";
     public const string Complete = "complete";
     public const string OcrFailed = "ocr_failed";
+    public const string Manual = "manual";
 }
 
 public static class ExpenseSource

@@ -34,6 +34,7 @@ public sealed record OcrResultMessage(
     decimal? Total,
     IReadOnlyList<OcrLineItem>? LineItems,
     string? Barcode,
+    IReadOnlyDictionary<string, int>? Confidence,
     string? RawOcrPath,
     string? ErrorMessage);
 

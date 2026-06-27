@@ -48,6 +48,10 @@ public static class AuthEndpoints
             .AllowAnonymous()
             .WithSummary("Complete login with a TOTP code when MFA is required");
 
+        group.MapGet("/session", HandleGetSession)
+            .RequireAuthorization()
+            .WithSummary("Return the current session userId and role");
+
         var adminGroup = app.MapGroup("/admin").WithTags("Admin");
 
         adminGroup.MapMethods("/users/{id:guid}/mfa", ["PATCH"], HandleAdminMfaToggle)
@@ -156,6 +160,15 @@ public static class AuthEndpoints
         ctx.Session.SetString(SessionRoleKey, role);
 
         return Results.Ok(new { message = "MFA verified. Welcome." });
+    }
+
+    private static IResult HandleGetSession(HttpContext ctx)
+    {
+        var userId = ctx.Session.GetString(SessionUserIdKey);
+        var role = ctx.Session.GetString(SessionRoleKey);
+        if (userId is null || role is null)
+            return Results.Problem("No active session.", statusCode: 401);
+        return Results.Ok(new SessionResponse(userId, role));
     }
 
     private static async Task<IResult> HandleAdminMfaToggle(

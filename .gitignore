@@ -37,6 +37,8 @@ venv/
 env/
 .venv/
 jspm_packages/
+/.pnp
+.pnp.js
 
 # --- Build & Compiled Output ---
 dist/
@@ -44,7 +46,54 @@ build/
 out/
 bin/
 obj/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+binstobj/
 *.pyc
 *.pyo
 *.pyd
+*.suo
+*.vsidx
+source/api/src/ExpenseTracker.Api/Properties/launchSettings.json
+
+# Log Files
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+## Visual Studio cache and settings
+.vs/
+Generated%20Files/
+_ReSharper*/
+*.[Cc]aches
+*.openeddf
+*.opendb
+*.sharedlog
+*.elr
+*.Suo
+*.userprefs
+
+## Visual Studio Code settings
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/code-workspace
+
+# Next.js Build and Production Outputs
+.next/
+/out/
+/build
+/.swc/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts

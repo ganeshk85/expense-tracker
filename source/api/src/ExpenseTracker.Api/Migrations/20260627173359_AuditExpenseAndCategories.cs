@@ -5,7 +5,7 @@
 namespace ExpenseTracker.Api.Migrations
 {
     /// <inheritdoc />
-    public partial class FixModelSnapshot : Migration
+    public partial class AuditExpenseAndCategories : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

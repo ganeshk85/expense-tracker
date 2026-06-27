@@ -129,31 +129,68 @@ class OcrWorker:
                 raise
 
     async def _process(self, message_id: str, fields: dict[str, str]) -> None:
-        """Process a single job message; always ACKs regardless of outcome."""
+        """Process a single job message with up to 3 attempts (exponential backoff).
+
+        Retry delays: 10s after attempt 1, 30s after attempt 2, then fail.
+        Always ACKs the Redis message regardless of outcome to prevent infinite requeue.
+        """
+        _RETRY_DELAYS = [10, 30]  # seconds between attempts 1→2 and 2→3
+        _MAX_ATTEMPTS = 3
+
         payload_str = fields.get("payload", "")
         receipt_id: str | None = None
         try:
             payload = json.loads(payload_str)
             receipt_id = payload["receiptId"]
             file_path = payload["filePath"]
-            user_id = payload.get("userId", "")
 
-            logger.info("Starting OCR pipeline for receipt %s", receipt_id)
-            t_start = time.perf_counter()
+            last_error: str = ""
+            for attempt in range(1, _MAX_ATTEMPTS + 1):
+                try:
+                    if attempt > 1:
+                        delay = _RETRY_DELAYS[attempt - 2]
+                        logger.warning(
+                            "Retrying OCR for receipt %s (attempt %d/%d) after %ds",
+                            receipt_id, attempt, _MAX_ATTEMPTS, delay,
+                        )
+                        # Publish retry status so the UI can show "Processing (retry X of 3)"
+                        await self._publish_retry_status(receipt_id, attempt, _MAX_ATTEMPTS)
+                        await asyncio.sleep(delay)
 
-            result = await asyncio.to_thread(
-                self._run_pipeline, receipt_id, file_path
+                    logger.info(
+                        "Starting OCR pipeline for receipt %s (attempt %d/%d)",
+                        receipt_id, attempt, _MAX_ATTEMPTS,
+                    )
+                    t_start = time.perf_counter()
+
+                    result = await asyncio.to_thread(
+                        self._run_pipeline, receipt_id, file_path
+                    )
+
+                    elapsed = time.perf_counter() - t_start
+                    logger.info(
+                        "OCR pipeline completed for receipt %s in %.2fs (attempt %d)",
+                        receipt_id, elapsed, attempt,
+                    )
+                    await self._publish_result(receipt_id, result)
+                    return  # success — stop retrying
+
+                except Exception as exc:
+                    last_error = str(exc)
+                    logger.warning(
+                        "OCR attempt %d/%d failed for receipt %s: %s",
+                        attempt, _MAX_ATTEMPTS, receipt_id, last_error,
+                    )
+
+            # All attempts exhausted.
+            logger.error(
+                "OCR failed after %d attempts for receipt %s: %s",
+                _MAX_ATTEMPTS, receipt_id, last_error,
             )
-
-            elapsed = time.perf_counter() - t_start
-            logger.info(
-                "OCR pipeline completed for receipt %s in %.2fs", receipt_id, elapsed
-            )
-
-            await self._publish_result(receipt_id, result)
+            await self._publish_error(receipt_id, last_error)
 
         except Exception as exc:
-            logger.exception("OCR pipeline failed for receipt %s", receipt_id)
+            logger.exception("Unhandled error processing OCR job message %s", message_id)
             if receipt_id:
                 await self._publish_error(receipt_id, str(exc))
         finally:
@@ -496,8 +533,23 @@ class OcrWorker:
         )
         logger.debug("Published OCR result for receipt %s to %s", receipt_id, _RESULTS_STREAM)
 
+    async def _publish_retry_status(
+        self, receipt_id: str, attempt: int, max_attempts: int
+    ) -> None:
+        """Publish a retry-in-progress status so the API can surface it to the UI."""
+        payload = {
+            "receiptId": receipt_id,
+            "status": f"processing (retry {attempt} of {max_attempts})",
+            "attempt": attempt,
+            "maxAttempts": max_attempts,
+        }
+        await self._redis.xadd(
+            _RESULTS_STREAM,
+            {"payload": json.dumps(payload)},
+        )
+
     async def _publish_error(self, receipt_id: str, error_message: str) -> None:
-        """Publish an ocr_failed result when the pipeline throws."""
+        """Publish an ocr_failed result when all retry attempts are exhausted."""
         result = {
             "receiptId": receipt_id,
             "status": "ocr_failed",

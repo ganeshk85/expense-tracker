@@ -27,6 +27,81 @@ For running individual services outside Docker:
 - [Node.js 20+](https://nodejs.org/) — frontend
 - [.NET 10 SDK](https://dotnet.microsoft.com/download) — backend API
 - [Python 3.11+](https://www.python.org/) — OCR worker
+- [PostgreSQL 17](https://www.postgresql.org/download/) — database
+- Redis — see platform-specific instructions below
+
+### Redis on Windows (without Docker)
+
+Redis does not have an official Windows build. The recommended option for local development on Windows is **Memurai**, a Redis-compatible server for Windows.
+
+**Install Memurai:**
+
+1. Download the installer from [memurai.com](https://www.memurai.com/)
+2. Run the installer — Memurai registers itself as a Windows service named `Memurai`
+3. The service starts automatically on boot; no configuration is needed for local development
+
+**Verify Memurai is running:**
+
+```powershell
+Get-Service -Name Memurai
+```
+
+The `Status` column should show `Running`. If not, start it with:
+
+```powershell
+Start-Service -Name Memurai
+```
+
+Memurai listens on `localhost:6379` by default, which matches the connection string in `appsettings.Development.json`.
+
+### Inspecting the OCR Job Queue (Redis Streams)
+
+The application uses two Redis streams for OCR processing:
+
+| Stream | Direction | Consumer group |
+|---|---|---|
+| `ocr.jobs` | API → OCR worker | `ocr-workers` |
+| `ocr.results` | OCR worker → API | `api-consumer` |
+
+Open the Memurai CLI from a PowerShell prompt:
+
+```powershell
+& "C:\Program Files\Memurai\memurai-cli.exe"
+```
+
+**View pending (unprocessed) jobs:**
+
+```
+XPENDING ocr.jobs ocr-workers - + 10
+```
+
+**View all entries in the jobs stream (last 10):**
+
+```
+XRANGE ocr.jobs - + COUNT 10
+```
+
+**View all entries in the results stream (last 10):**
+
+```
+XRANGE ocr.results - + COUNT 10
+```
+
+**Check how many entries are in each stream:**
+
+```
+XLEN ocr.jobs
+XLEN ocr.results
+```
+
+**Inspect consumer group state (lag, last-delivered ID):**
+
+```
+XINFO GROUPS ocr.jobs
+XINFO GROUPS ocr.results
+```
+
+A `pending` count greater than zero on `ocr.jobs` means the OCR worker has received jobs that have not been acknowledged — the worker may be down or processing slowly. A non-zero `pending` count on `ocr.results` means the API consumer has not yet processed results from the worker.
 
 ### Docker on macOS
 

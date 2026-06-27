@@ -43,3 +43,8 @@ public sealed record MfaLoginRequest(
 /// Body for PATCH /admin/users/{id}/mfa — Owner-only toggle.
 /// </summary>
 public sealed record AdminMfaToggleRequest(bool Enabled);
+
+/// <summary>
+/// Returned by GET /auth/session — current session userId and role.
+/// </summary>
+public sealed record SessionResponse(string UserId, string Role);

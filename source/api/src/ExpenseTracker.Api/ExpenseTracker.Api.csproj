@@ -21,5 +21,6 @@
     <ProjectReference Include="..\ExpenseTracker.Receipt\ExpenseTracker.Receipt.csproj" />
     <ProjectReference Include="..\ExpenseTracker.Audit\ExpenseTracker.Audit.csproj" />
     <ProjectReference Include="..\ExpenseTracker.Ocr\ExpenseTracker.Ocr.csproj" />
+    <ProjectReference Include="..\ExpenseTracker.Expense\ExpenseTracker.Expense.csproj" />
   </ItemGroup>
 </Project>

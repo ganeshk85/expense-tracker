@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { apiClient } from '@/api/client'
 import type { ReceiptStatusResponse, UploadReceiptResponse } from '@/api/types'
+import { ReceiptStatusBadge } from '@/components/ReceiptStatusBadge'
 import styles from './ReceiptUpload.module.css'
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'application/pdf']
@@ -19,6 +20,7 @@ export function ReceiptUpload({ onUploadComplete }: ReceiptUploadProps) {
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<'idle' | 'uploading' | 'processing'>('idle')
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
 
   function validateFile(file: File): string | null {
     if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -46,6 +48,7 @@ export function ReceiptUpload({ onUploadComplete }: ReceiptUploadProps) {
 
       const result = await apiClient.postForm<UploadReceiptResponse>('/receipts/upload', formData)
       setProgress('processing')
+      setRetryCount(0)
       onUploadComplete?.(result.receiptId)
       pollForThumbnail(result.receiptId)
     } catch (err) {
@@ -58,6 +61,7 @@ export function ReceiptUpload({ onUploadComplete }: ReceiptUploadProps) {
     const intervalId = setInterval(async () => {
       try {
         const status = await apiClient.get<ReceiptStatusResponse>(`/receipts/${receiptId}/status`)
+        setRetryCount(status.ocrRetryCount)
         if (status.thumbnailUrl) {
           setThumbnailUrl(status.thumbnailUrl)
           setProgress('idle')
@@ -129,7 +133,7 @@ export function ReceiptUpload({ onUploadComplete }: ReceiptUploadProps) {
         {progress === 'processing' && !thumbnailUrl && (
           <div className={styles.status}>
             <span className={styles.spinner} aria-hidden="true" />
-            <p>Processing receipt…</p>
+            <ReceiptStatusBadge status="Processing" ocrRetryCount={retryCount} />
           </div>
         )}
 

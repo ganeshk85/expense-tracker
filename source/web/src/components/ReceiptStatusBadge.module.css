@@ -1,0 +1,52 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+}
+
+.statusUploaded {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+.statusProcessing {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.statusComplete {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.statusFailed {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: currentColor;
+  flex-shrink: 0;
+}
+
+.spinner {
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 1.5px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

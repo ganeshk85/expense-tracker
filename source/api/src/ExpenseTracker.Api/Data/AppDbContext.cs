@@ -1,7 +1,8 @@
 using ExpenseTracker.Audit.Entities;
 using ExpenseTracker.Auth.Entities;
-using ExpenseTracker.Ocr.Entities;
 using Microsoft.EntityFrameworkCore;
+using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
+using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
 using ReceiptEntity = ExpenseTracker.Receipt.Entities.Receipt;
 
 namespace ExpenseTracker.Api.Data;
@@ -12,8 +13,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<InviteToken> InviteTokens => Set<InviteToken>();
     public DbSet<ReceiptEntity> Receipts => Set<ReceiptEntity>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
-    public DbSet<Expense> Expenses => Set<Expense>();
-    public DbSet<ExpenseItem> ExpenseItems => Set<ExpenseItem>();
+    public DbSet<ExpenseEntity> Expenses => Set<ExpenseEntity>();
+    public DbSet<ExpenseItemEntity> ExpenseItems => Set<ExpenseItemEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -52,7 +53,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(a => new { a.UserId, a.CreatedAt });
         });
 
-        modelBuilder.Entity<Expense>(e =>
+        modelBuilder.Entity<ExpenseEntity>(e =>
         {
             e.HasKey(x => x.Id);
             e.ToTable("expenses");
@@ -62,11 +63,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.TaxAmount).HasColumnType("numeric(18,4)");
             e.Property(x => x.Total).HasColumnType("numeric(18,4)");
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            e.Property(x => x.Category).HasMaxLength(64);
+            e.Property(x => x.Tags).HasColumnType("text[]");
+            e.Property(x => x.ConfidenceJson).HasColumnType("jsonb");
+            // ReceiptId is nullable — manual expenses have no associated receipt.
             e.HasOne<ReceiptEntity>()
              .WithMany()
              .HasForeignKey(x => x.ReceiptId)
-             .OnDelete(DeleteBehavior.Cascade);
-            e.HasIndex(x => x.ReceiptId).IsUnique();
+             .OnDelete(DeleteBehavior.Cascade)
+             .IsRequired(false);
+            // Partial unique index: allow multiple NULL ReceiptIds (manual expenses).
+            e.HasIndex(x => x.ReceiptId).IsUnique()
+             .HasFilter("\"ReceiptId\" IS NOT NULL");
             e.HasIndex(x => x.UserId);
             e.HasMany(x => x.Items)
              .WithOne()
@@ -74,7 +82,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
              .OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<ExpenseItem>(e =>
+        modelBuilder.Entity<ExpenseItemEntity>(e =>
         {
             e.HasKey(i => i.Id);
             e.ToTable("expense_items");

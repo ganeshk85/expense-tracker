@@ -8,6 +8,9 @@ using ExpenseTracker.Audit.Repositories;
 using ExpenseTracker.Auth;
 using ExpenseTracker.Auth.Endpoints;
 using ExpenseTracker.Auth.Repositories;
+using ExpenseTracker.Expense;
+using ExpenseTracker.Expense.Endpoints;
+using ExpenseTracker.Expense.Repositories;
 using ExpenseTracker.Ocr;
 using ExpenseTracker.Ocr.Repositories;
 using ExpenseTracker.Receipt;
@@ -101,13 +104,17 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IInviteTokenRepository, InviteTokenRepository>();
 builder.Services.AddScoped<IReceiptRepository, ReceiptRepository>();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
-builder.Services.AddScoped<IExpenseRepository, ExpenseRepository>();
+// ExpenseRepository implements both IExpenseRepository and IExpenseManagementRepository.
+builder.Services.AddScoped<ExpenseRepository>();
+builder.Services.AddScoped<IExpenseRepository>(sp => sp.GetRequiredService<ExpenseRepository>());
+builder.Services.AddScoped<IExpenseManagementRepository>(sp => sp.GetRequiredService<ExpenseRepository>());
 
 // Modules
 builder.Services.AddAuthModule();
 builder.Services.AddReceiptModule();
 builder.Services.AddAuditModule();
 builder.Services.AddOcrModule();
+builder.Services.AddExpenseModule();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -158,6 +165,7 @@ app.UseAuditMiddleware();
 app.MapAuthEndpoints();
 app.MapReceiptEndpoints();
 app.MapAuditEndpoints();
+app.MapExpenseEndpoints();
 
 app.Run();
 

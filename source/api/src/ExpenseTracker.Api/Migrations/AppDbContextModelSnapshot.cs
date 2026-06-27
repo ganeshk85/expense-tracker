@@ -168,6 +168,13 @@ namespace ExpenseTracker.Api.Migrations
                     b.Property<string>("Barcode")
                         .HasColumnType("text");
 
+                    b.Property<string>("Category")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ConfidenceJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -182,12 +189,15 @@ namespace ExpenseTracker.Api.Migrations
                     b.Property<string>("MerchantName")
                         .HasColumnType("text");
 
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
                     b.Property<string>("OcrStatus")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<Guid>("ReceiptId")
+                    b.Property<Guid?>("ReceiptId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Source")
@@ -197,6 +207,10 @@ namespace ExpenseTracker.Api.Migrations
 
                     b.Property<decimal?>("Subtotal")
                         .HasColumnType("numeric(18,4)");
+
+                    b.PrimitiveCollection<string[]>("Tags")
+                        .IsRequired()
+                        .HasColumnType("text[]");
 
                     b.Property<decimal?>("TaxAmount")
                         .HasColumnType("numeric(18,4)");
@@ -216,7 +230,8 @@ namespace ExpenseTracker.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ReceiptId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"ReceiptId\" IS NOT NULL");
 
                     b.HasIndex("UserId");
 
@@ -304,8 +319,7 @@ namespace ExpenseTracker.Api.Migrations
                     b.HasOne("ExpenseTracker.Receipt.Entities.Receipt", null)
                         .WithMany()
                         .HasForeignKey("ReceiptId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("ExpenseTracker.Ocr.Entities.ExpenseItem", b =>
