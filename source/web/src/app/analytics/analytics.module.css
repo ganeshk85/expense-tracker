@@ -1,0 +1,378 @@
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.pageTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 1.5rem;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Tab bar ─────────────────────────────────────────────────────────────── */
+
+.tabBar {
+  display: flex;
+  border-bottom: 2px solid #e5e7eb;
+  margin-bottom: 1.75rem;
+  gap: 0;
+}
+
+.tab {
+  padding: 0.625rem 1.25rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #6b7280;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab:hover {
+  color: #374151;
+}
+
+.tabActive {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+/* ── Controls ────────────────────────────────────────────────────────────── */
+
+.controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.controlLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.select {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: #111827;
+  background: #fff;
+  cursor: pointer;
+  min-width: 10rem;
+}
+
+.dateInput {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: #111827;
+  background: #fff;
+}
+
+.filterBtn {
+  padding: 0.4375rem 1rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.filterBtn:hover {
+  background: #1d4ed8;
+}
+
+/* ── Status ──────────────────────────────────────────────────────────────── */
+
+.error {
+  color: #dc2626;
+  font-size: 0.875rem;
+  padding: 0.75rem 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.loadingText {
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.emptyHint {
+  color: #6b7280;
+  font-size: 0.9375rem;
+  padding: 2.5rem 0;
+  text-align: center;
+}
+
+/* ── Trend chart ─────────────────────────────────────────────────────────── */
+
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-x: auto;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.labelCol {
+  min-width: 9rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding-right: 0.75rem;
+}
+
+.monthCol {
+  flex: 1;
+  min-width: 3.5rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.seriesRow {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+.seriesCategory {
+  font-size: 0.875rem;
+  color: #111827;
+  font-weight: 500;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seriesTotal {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.barCell {
+  height: 3.5rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: default;
+}
+
+.bar {
+  width: 70%;
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+  transition: height 0.3s ease;
+}
+
+.barNormal {
+  background: #2563eb;
+}
+
+.barSpike {
+  background: #f59e0b;
+}
+
+/* ── Merchant list ───────────────────────────────────────────────────────── */
+
+.merchantList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.merchantRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+  font-size: 0.9375rem;
+}
+
+.merchantRow:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.merchantRowActive {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.rank {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #9ca3af;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.merchantName {
+  flex: 1;
+  color: #111827;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.visitCount {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.totalSpent {
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.chevron {
+  font-size: 0.625rem;
+  color: #9ca3af;
+}
+
+/* ── Merchant detail panel ───────────────────────────────────────────────── */
+
+.detailPanel {
+  background: #fff;
+  border: 1px solid #bfdbfe;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 1rem 1.25rem 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.detailMerchant {
+  display: block;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.detailMeta {
+  display: block;
+  font-size: 0.8125rem;
+  color: #6b7280;
+  margin-top: 0.125rem;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 0.9375rem;
+  padding: 0.125rem 0.25rem;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.closeBtn:hover {
+  color: #374151;
+}
+
+.errorText {
+  color: #dc2626;
+  font-size: 0.875rem;
+}
+
+/* ── Detail table ────────────────────────────────────────────────────────── */
+
+.detailTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.detailTable th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.detailTable td {
+  padding: 0.5rem 0.5rem;
+  color: #374151;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: top;
+}
+
+.detailTable tr:last-child td {
+  border-bottom: none;
+}
+
+.amountCell {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.notesCell {
+  color: #6b7280;
+  font-style: italic;
+  max-width: 14rem;
+}

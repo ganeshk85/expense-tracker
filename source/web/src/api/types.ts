@@ -281,3 +281,46 @@ export interface DashboardSummaryResponse {
   categoryBreakdown: CategoryBreakdownItem[]
   topMerchants: TopMerchantItem[]
 }
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+
+export interface CategoryMonthDataPoint {
+  month: string
+  amount: number
+  isSpiked: boolean
+}
+
+export interface CategoryTrendSeries {
+  category: string
+  data: CategoryMonthDataPoint[]
+}
+
+export interface CategoryTrendResponse {
+  months: string[]
+  series: CategoryTrendSeries[]
+}
+
+export interface MerchantRankItem {
+  merchant: string
+  totalSpent: number
+  visitCount: number
+}
+
+export interface MerchantRankingsResponse {
+  merchants: MerchantRankItem[]
+}
+
+export interface MerchantExpenseItem {
+  id: string
+  date: string | null
+  total: number | null
+  category: string | null
+  notes: string | null
+}
+
+export interface MerchantDetailResponse {
+  merchant: string
+  totalSpent: number
+  visitCount: number
+  expenses: MerchantExpenseItem[]
+}

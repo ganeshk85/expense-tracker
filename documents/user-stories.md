@@ -10,9 +10,9 @@
 
 | Role | Description |
 |------|-------------|
-| **Owner** | Manages users, budgets, all expenses, settings, and audit logs |
-| **Adult Member** | Uploads receipts, manages own expenses, views shared budgets |
-| **Restricted Member** | Uploads receipts, views only assigned expenses |
+| **Admin** | Manages users, budgets, all expenses, settings, and audit logs |
+| **Contributor** | Uploads receipts, manages own expenses, views shared budgets |
+| **Reader** | Uploads receipts, views only assigned expenses |
 
 ## Phase Reference
 
@@ -37,7 +37,7 @@
 **Phase:** 1 | **Points:** 3 | **Priority:** Critical | **Type:** Feature
 
 **Story:**
-As an **Owner** or **Adult Member**,
+As an **Admin** or **Contributor**,
 I want to log in with a username and password,
 So that I can securely access my family's expense data.
 
@@ -56,7 +56,7 @@ So that I can securely access my family's expense data.
 **Phase:** 1 | **Points:** 5 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want to enable MFA for any user account,
 So that we have an additional layer of security against unauthorized access.
 
@@ -64,7 +64,7 @@ So that we have an additional layer of security against unauthorized access.
 - Given MFA is enabled for my account, when I log in with valid credentials, then I am prompted for a one-time code before gaining access.
 - Given I enter a valid OTP code, when I submit, then I am authenticated and redirected to the dashboard.
 - Given I enter an invalid OTP code, when I submit, then I see an error and the login is rejected.
-- Given an Owner, when they access user settings, then they can enable or disable MFA for any account in the household.
+- Given an Admin, when they access user settings, then they can enable or disable MFA for any account in the household.
 - Given MFA setup, when initiated, then I am shown a QR code to scan with an authenticator app.
 
 **INVEST:** ✓ Independent ✓ Negotiable ✓ Valuable ✓ Estimable ✓ Small ✓ Testable
@@ -75,14 +75,14 @@ So that we have an additional layer of security against unauthorized access.
 **Phase:** 1 | **Points:** 5 | **Priority:** Critical | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want to assign roles to household members,
 So that each person only accesses what is appropriate for their level of trust.
 
 **Acceptance Criteria:**
-- Given I am an Owner, when I invite a new member, then I can assign them the role of Owner, Adult Member, or Restricted Member.
-- Given a Restricted Member is logged in, when they attempt to view another member's expenses, then they receive a 403 Forbidden response.
-- Given an Adult Member is logged in, when they attempt to access settings or audit logs, then they are redirected with an "Access Denied" message.
+- Given I am an Admin, when I invite a new member, then I can assign them the role of Admin, Contributor, or Reader.
+- Given a Reader is logged in, when they attempt to view another member's expenses, then they receive a 403 Forbidden response.
+- Given a Contributor is logged in, when they attempt to access settings or audit logs, then they are redirected with an "Access Denied" message.
 - Given a role is changed for a user, when they next make a request, then the new permissions apply immediately (no re-login required).
 - Given all protected API routes, when an unauthenticated request is made, then a 401 Unauthorized response is returned.
 
@@ -94,12 +94,12 @@ So that each person only accesses what is appropriate for their level of trust.
 **Phase:** 1 | **Points:** 3 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want to invite family members to the platform,
 So that each person has their own secure account without self-registering.
 
 **Acceptance Criteria:**
-- Given I am an Owner, when I enter a family member's name and assign a role, then an invite link or temporary password is generated.
+- Given I am an Admin, when I enter a family member's name and assign a role, then an invite link or temporary password is generated.
 - Given a new member uses the invite link, when they set their password, then the account is activated and they are logged in.
 - Given an invite link is generated, when 48 hours pass without use, then the link expires and a new one must be issued.
 - Given a member account is created, when viewed in settings, then it shows their role, last login, and account status.
@@ -112,16 +112,16 @@ So that each person has their own secure account without self-registering.
 **Phase:** 1 | **Points:** 5 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want a tamper-evident audit log of all significant system actions,
 So that I can review who did what and when across the household account.
 
 **Acceptance Criteria:**
 - Given any user logs in or out, when the event occurs, then it is recorded with timestamp, user ID, and IP address.
 - Given an expense, receipt, or budget is created, edited, or deleted, when the action is performed, then it is recorded in the audit log with the before/after values.
-- Given I am an Owner, when I access the audit log page, then I can filter by date range, user, and action type.
-- Given a Restricted Member or Adult Member, when they attempt to access audit logs, then they receive an Access Denied response.
-- Given the audit log, when entries are written, then they cannot be edited or deleted by any user role including Owner.
+- Given I am an Admin, when I access the audit log page, then I can filter by date range, user, and action type.
+- Given a Reader or Contributor, when they attempt to access audit logs, then they receive an Access Denied response.
+- Given the audit log, when entries are written, then they cannot be edited or deleted by any user role including Admin.
 
 **INVEST:** ✓ Independent ✓ Negotiable ✓ Valuable ✓ Estimable ✓ Small ✓ Testable
 
@@ -139,7 +139,7 @@ So that I can review who did what and when across the household account.
 **Phase:** 1 | **Points:** 3 | **Priority:** Critical | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to upload a receipt image or PDF by selecting a file or dragging it into the browser,
 So that I can capture expense records quickly from my desktop.
 
@@ -158,7 +158,7 @@ So that I can capture expense records quickly from my desktop.
 **Phase:** 1 | **Points:** 5 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Adult Member** using a mobile browser,
+As a **Contributor** using a mobile browser,
 I want to take a photo of a receipt with my camera and upload it immediately,
 So that I can capture receipts on the go without switching devices.
 
@@ -177,7 +177,7 @@ So that I can capture receipts on the go without switching devices.
 **Phase:** 1 | **Points:** 3 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to attach multiple receipt images to a single expense,
 So that I can handle split receipts or multi-page documents without creating duplicate entries.
 
@@ -195,7 +195,7 @@ So that I can handle split receipts or multi-page documents without creating dup
 **Phase:** 1 | **Points:** 3 | **Priority:** Medium | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to be warned if my uploaded receipt image is too blurry or dark to read,
 So that I can re-upload a better image before OCR fails.
 
@@ -227,19 +227,19 @@ So that the UI can display receipt previews without loading full-resolution file
 
 ---
 
-### US-REC-06 — Restricted Member Receipt Upload
+### US-REC-06 — Reader Receipt Upload
 **Phase:** 1 | **Points:** 2 | **Priority:** Medium | **Type:** Feature
 
 **Story:**
-As a **Restricted Member**,
+As a **Reader**,
 I want to upload a receipt and submit it for review,
 So that I can contribute expense records even with limited account access.
 
 **Acceptance Criteria:**
-- Given I am a Restricted Member, when I upload a receipt, then it is accepted and queued for OCR like any other upload.
+- Given I am a Reader, when I upload a receipt, then it is accepted and queued for OCR like any other upload.
 - Given my upload is processed, when the expense is created, then it is visible to me in my assigned expenses view only.
-- Given I am a Restricted Member, when I attempt to view another member's uploaded receipts, then I receive an Access Denied response.
-- Given my upload is submitted, when an Owner or Adult Member reviews it, then they can assign it to a shared expense or approve it.
+- Given I am a Reader, when I attempt to view another member's uploaded receipts, then I receive an Access Denied response.
+- Given my upload is submitted, when an Admin or Contributor reviews it, then they can assign it to a shared expense or approve it.
 
 **INVEST:** ✓ Independent ✓ Negotiable ✓ Valuable ✓ Estimable ✓ Small ✓ Testable
 
@@ -257,7 +257,7 @@ So that I can contribute expense records even with limited account access.
 **Phase:** 1 | **Points:** 8 | **Priority:** Critical | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want the system to automatically extract key data from my uploaded receipt,
 So that I don't have to type in merchant names, totals, and dates manually.
 
@@ -277,7 +277,7 @@ So that I don't have to type in merchant names, totals, and dates manually.
 **Phase:** 1 | **Points:** 3 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to see a confidence score for each extracted field,
 So that I know which values need manual review before saving.
 
@@ -295,7 +295,7 @@ So that I know which values need manual review before saving.
 **Phase:** 1 | **Points:** 5 | **Priority:** Critical | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to correct any incorrectly extracted field before saving the expense,
 So that my records are accurate even when OCR makes mistakes.
 
@@ -314,7 +314,7 @@ So that my records are accurate even when OCR makes mistakes.
 **Phase:** 1 | **Points:** 5 | **Priority:** Medium | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want barcodes and QR codes on receipts to be automatically decoded,
 So that loyalty cards, product identifiers, or payment references are captured without manual entry.
 
@@ -332,7 +332,7 @@ So that loyalty cards, product identifiers, or payment references are captured w
 **Phase:** 1 | **Points:** 3 | **Priority:** Medium | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want failed OCR jobs to retry automatically,
 So that transient processing errors don't require me to re-upload the receipt.
 
@@ -358,7 +358,7 @@ So that transient processing errors don't require me to re-upload the receipt.
 **Phase:** 1 | **Points:** 3 | **Priority:** Critical | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to create an expense manually without a receipt,
 So that I can record cash payments or expenses where no receipt was issued.
 
@@ -377,7 +377,7 @@ So that I can record cash payments or expenses where no receipt was issued.
 **Phase:** 1 | **Points:** 3 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to assign a category and optional tags to each expense,
 So that I can organize spending for budgeting and search purposes.
 
@@ -396,7 +396,7 @@ So that I can organize spending for budgeting and search purposes.
 **Phase:** 1 | **Points:** 2 | **Priority:** Medium | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to add a note and optional file attachments to any expense,
 So that I can record context (e.g., "business lunch with client") or attach a warranty document.
 
@@ -414,15 +414,15 @@ So that I can record context (e.g., "business lunch with client") or attach a wa
 **Phase:** 1 | **Points:** 5 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to mark an expense as shared and split it among household members,
 So that everyone can see their contribution to shared household spending.
 
 **Acceptance Criteria:**
 - Given I am editing an expense, when I toggle "Shared Expense," then I can select which household members share it and assign split amounts or percentages.
 - Given a shared expense is saved, when a selected member logs in, then the shared expense appears in their expense list with their portion amount.
-- Given a Restricted Member is excluded from a shared expense, when they view expenses, then they do not see the shared expense at all.
-- Given I am an Owner, when I view any shared expense, then I see all members' shares and the full total.
+- Given a Reader is excluded from a shared expense, when they view expenses, then they do not see the shared expense at all.
+- Given I am an Admin, when I view any shared expense, then I see all members' shares and the full total.
 - Given a shared expense total is edited, when I save, then the member shares are recalculated and members are shown an updated view.
 
 **INVEST:** ✓ Independent ✓ Negotiable ✓ Valuable ✓ Estimable ✓ Small ✓ Testable
@@ -433,7 +433,7 @@ So that everyone can see their contribution to shared household spending.
 **Phase:** 1 | **Points:** 3 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to view a list of all my expenses and open any one for editing,
 So that I can review and correct past entries.
 
@@ -441,7 +441,7 @@ So that I can review and correct past entries.
 - Given I navigate to the expense list, when the page loads, then my expenses appear sorted by date (most recent first) within 3 seconds.
 - Given I click an expense row, when the detail page opens, then all fields are editable.
 - Given I edit and save an expense, when I return to the list, then the updated values are reflected immediately.
-- Given I am an Owner, when I view the expense list, then I can toggle between "My Expenses" and "All Household Expenses."
+- Given I am an Admin, when I view the expense list, then I can toggle between "My Expenses" and "All Household Expenses."
 - Given I delete an expense, when confirmed, then it is removed from the list and an audit log entry is created.
 
 **INVEST:** ✓ Independent ✓ Negotiable ✓ Valuable ✓ Estimable ✓ Small ✓ Testable
@@ -452,7 +452,7 @@ So that I can review and correct past entries.
 **Phase:** 1 | **Points:** 5 | **Priority:** Medium | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to view and edit individual line items extracted from a receipt,
 So that I can track spending at the product level, not just the receipt total.
 
@@ -479,7 +479,7 @@ So that I can track spending at the product level, not just the receipt total.
 **Phase:** 2 | **Points:** 3 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want to set a monthly spending budget for each expense category,
 So that the household knows how much we can spend per category each month.
 
@@ -497,15 +497,15 @@ So that the household knows how much we can spend per category each month.
 **Phase:** 2 | **Points:** 5 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Owner**,
-I want to set a shared household budget visible to all Adult Members,
+As an **Admin**,
+I want to set a shared household budget visible to all Contributors,
 So that the whole family can track collective spending toward a shared financial goal.
 
 **Acceptance Criteria:**
-- Given I create a shared household budget, when saved, then all Adult Members can see the budget and their contribution to it.
+- Given I create a shared household budget, when saved, then all Contributors can see the budget and their contribution to it.
 - Given a shared budget is active, when any member adds an expense in that category, then the shared budget progress updates in real time.
-- Given I am a Restricted Member, when I access shared budget details, then I can see only total progress, not individual member breakdowns.
-- Given I am an Owner, when I view the shared budget, then I see a breakdown of each member's contribution.
+- Given I am a Reader, when I access shared budget details, then I can see only total progress, not individual member breakdowns.
+- Given I am an Admin, when I view the shared budget, then I see a breakdown of each member's contribution.
 - Given a shared budget exists, when I delete it, then members are notified via an in-app message that the budget was removed.
 
 **INVEST:** ✓ Independent ✓ Negotiable ✓ Valuable ✓ Estimable ✓ Small ✓ Testable
@@ -516,7 +516,7 @@ So that the whole family can track collective spending toward a shared financial
 **Phase:** 2 | **Points:** 5 | **Priority:** Medium | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want to receive an alert when a budget category reaches a set spending threshold,
 So that I can take action before the budget is exceeded.
 
@@ -561,7 +561,7 @@ So that spending progress reflects only the current month without manual interve
 **Phase:** 2 | **Points:** 5 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Adult Member**,
+As a **Contributor**,
 I want to search my expenses by merchant, item, amount, category, barcode, or date range,
 So that I can quickly find a specific receipt or group of transactions.
 
@@ -571,7 +571,7 @@ So that I can quickly find a specific receipt or group of transactions.
 - Given I set a date range filter, when applied, then only expenses within that date range are shown.
 - Given I combine filters (e.g., merchant + date range), when applied, then only expenses matching all filters are returned.
 - Given my search returns no results, when the list is shown, then a message states "No expenses found for your search."
-- Given I am a Restricted Member, when I search, then results include only my assigned expenses.
+- Given I am a Reader, when I search, then results include only my assigned expenses.
 
 **INVEST:** ✓ Independent ✓ Negotiable ✓ Valuable ✓ Estimable ✓ Small ✓ Testable
 
@@ -581,15 +581,15 @@ So that I can quickly find a specific receipt or group of transactions.
 **Phase:** 2 | **Points:** 5 | **Priority:** High | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want to see a household spending summary for the current and previous months,
 So that I have an at-a-glance view of where money is going.
 
 **Acceptance Criteria:**
 - Given I open the Dashboard, when the page loads within 3 seconds, then I see total spending for the current month, broken down by category.
 - Given I select a previous month, when the view updates, then the totals and categories for that month are shown.
-- Given I am an Adult Member, when I view the dashboard, then I see only my own expenses and shared expenses I am part of.
-- Given I am an Owner, when I view the dashboard, then I can toggle between "Household" and "My Expenses" views.
+- Given I am a Contributor, when I view the dashboard, then I see only my own expenses and shared expenses I am part of.
+- Given I am an Admin, when I view the dashboard, then I can toggle between "Household" and "My Expenses" views.
 - Given no expenses exist for a month, when the dashboard loads, then it shows $0 totals with an empty state message.
 
 **INVEST:** ✓ Independent ✓ Negotiable ✓ Valuable ✓ Estimable ✓ Small ✓ Testable
@@ -600,7 +600,7 @@ So that I have an at-a-glance view of where money is going.
 **Phase:** 2 | **Points:** 5 | **Priority:** Medium | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want to view a spending trend chart per category over the past 6 months,
 So that I can identify patterns and make informed budget decisions.
 
@@ -619,7 +619,7 @@ So that I can identify patterns and make informed budget decisions.
 **Phase:** 2 | **Points:** 3 | **Priority:** Medium | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want to see how much we spend at each merchant over time,
 So that I can identify top vendors and recurring costs.
 
@@ -637,7 +637,7 @@ So that I can identify top vendors and recurring costs.
 **Phase:** 2 | **Points:** 3 | **Priority:** Low | **Type:** Feature
 
 **Story:**
-As an **Owner**,
+As an **Admin**,
 I want to export my expense data as a CSV file for a selected date range,
 So that I can use it in spreadsheets or share it with an accountant.
 
@@ -645,7 +645,7 @@ So that I can use it in spreadsheets or share it with an accountant.
 - Given I select a date range and click "Export CSV," when the export runs, then a CSV file downloads to my device within 3 seconds.
 - Given the CSV is downloaded, when I open it, then it includes columns: Date, Merchant, Category, Tags, Amount, Currency, Source (Manual/OCR), Notes.
 - Given no expenses exist in the selected range, when export is clicked, then an empty CSV with headers is downloaded (not an error).
-- Given I am an Adult Member, when I export, then only my own expenses and shared expenses I am part of are included.
+- Given I am a Contributor, when I export, then only my own expenses and shared expenses I am part of are included.
 
 **INVEST:** ✓ Independent ✓ Negotiable ✓ Valuable ✓ Estimable ✓ Small ✓ Testable
 
@@ -665,7 +665,7 @@ So that I can use it in spreadsheets or share it with an accountant.
 | US-REC-03 | Attach Multiple Receipts to One Expense | Receipt | 1 | 3 | High |
 | US-REC-04 | Image Quality Detection | Receipt | 1 | 3 | Medium |
 | US-REC-05 | Automatic Thumbnail Generation | Receipt | 1 | 2 | Medium |
-| US-REC-06 | Restricted Member Receipt Upload | Receipt | 1 | 2 | Medium |
+| US-REC-06 | Reader Receipt Upload | Receipt | 1 | 2 | Medium |
 | US-OCR-01 | Automatic Receipt Data Extraction | OCR | 1 | 8 | Critical |
 | US-OCR-02 | Confidence Scoring Display | OCR | 1 | 3 | High |
 | US-OCR-03 | Manual Correction of Extracted Data | OCR | 1 | 5 | Critical |

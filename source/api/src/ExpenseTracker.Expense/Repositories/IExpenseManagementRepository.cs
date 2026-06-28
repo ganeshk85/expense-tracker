@@ -65,6 +65,15 @@ public interface IExpenseManagementRepository
     Task<(decimal TotalSpent, int ExpenseCount, IReadOnlyList<(string Category, decimal Amount)> ByCategory, IReadOnlyList<(string Merchant, decimal TotalSpent, int VisitCount)> TopMerchants)>
         GetDashboardDataAsync(Guid? userId, DateOnly month, int topMerchantsCount, CancellationToken ct = default);
 
+    Task<IReadOnlyList<(string Month, string Category, decimal Amount)>> GetCategoryTrendsAsync(
+        Guid? userId, int months, string? category, CancellationToken ct = default);
+
+    Task<IReadOnlyList<(string Merchant, decimal TotalSpent, int VisitCount)>> GetMerchantRankingsAsync(
+        Guid? userId, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct = default);
+
+    Task<IReadOnlyList<ExpenseEntity>> GetMerchantDetailAsync(
+        Guid? userId, string merchantName, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct = default);
+
     // ── Export ───────────────────────────────────────────────────────────────
 
     Task<IReadOnlyList<ExpenseEntity>> GetForExportAsync(

@@ -95,6 +95,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasIndex(x => x.ReceiptId).IsUnique()
              .HasFilter("\"ReceiptId\" IS NOT NULL");
             e.HasIndex(x => x.UserId);
+            // Analytics queries filter and group on date, category, and merchant_name.
+            e.HasIndex(x => x.Date);
+            e.HasIndex(x => x.Category);
+            e.HasIndex(x => x.MerchantName);
             e.HasMany(x => x.Items)
              .WithOne()
              .HasForeignKey(i => i.ExpenseId)

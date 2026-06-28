@@ -1,0 +1,8 @@
+global using FluentAssertions;
+global using Microsoft.AspNetCore.Mvc.Testing;
+global using Microsoft.EntityFrameworkCore;
+global using Xunit;
+global using ExpenseTracker.Api.Data;
+global using ExpenseTracker.Auth.Entities;
+global using ExpenseTracker.Auth.Services;
+global using Microsoft.Extensions.DependencyInjection;

@@ -9,6 +9,7 @@ public static class ExpenseModuleExtensions
     {
         services.AddScoped<IExpenseService, ExpenseService>();
         services.AddScoped<IDashboardService, DashboardService>();
+        services.AddScoped<IAnalyticsService, AnalyticsService>();
         return services;
     }
 }

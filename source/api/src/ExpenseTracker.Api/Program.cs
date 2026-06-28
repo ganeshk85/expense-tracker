@@ -181,6 +181,7 @@ app.MapReceiptEndpoints();
 app.MapAuditEndpoints();
 app.MapExpenseEndpoints();
 app.MapDashboardEndpoints();
+app.MapAnalyticsEndpoints();
 app.MapBudgetEndpoints();
 
 app.Run();
