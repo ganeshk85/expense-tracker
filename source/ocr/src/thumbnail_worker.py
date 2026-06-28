@@ -57,7 +57,11 @@ class ThumbnailWorker:
             logger.exception("Failed to generate thumbnail for receipt %s", receipt_id)
 
     def _generate_thumbnail(self, receipt_id: str, file_path: str) -> str:
-        """Generate thumbnail synchronously (CPU-bound, run in thread pool)."""
+        """Generate thumbnail synchronously (CPU-bound, run in thread pool).
+
+        Returns a relative path (thumbnails/{receipt_id}.jpg) so the API can store
+        it portably without coupling the DB to this machine's absolute paths.
+        """
         src = Path(file_path)
         thumbnails_dir = Path(self._settings.storage_thumbnails_path)
         thumbnails_dir.mkdir(parents=True, exist_ok=True)
@@ -74,7 +78,7 @@ class ThumbnailWorker:
             image = image.convert("RGB")
 
         image.save(dest, format="JPEG", quality=85, optimize=True)
-        return str(dest)
+        return f"thumbnails/{receipt_id}.jpg"
 
     def _load_image(self, src: Path) -> Image.Image:
         suffix = src.suffix.lower()

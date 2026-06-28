@@ -76,9 +76,11 @@ _DATE_PATTERNS = [
 # Time pattern: "14:32" or "2:32 PM"
 _TIME_PATTERN = re.compile(r"\b(\d{1,2}:\d{2}(?:\s*[AaPp][Mm])?)\b")
 
-# Line item: text followed by optional quantity and a price at line end
+# Line item: description followed by an optional quantity then a price at line end.
+# Quantity is optional — most receipts only print description + price per line.
+# Pattern: <description>  [<qty>  ]  <price>
 _LINE_ITEM_PATTERN = re.compile(
-    r"^(.+?)\s+(\d+(?:\.\d+)?)\s+\$?(\d[\d,]*\.\d{2})\s*$"
+    r"^(.+?)\s+(?:(\d+(?:\.\d+)?)\s+)?\$?(\d[\d,]*\.\d{2})\s*$"
 )
 
 
@@ -467,19 +469,22 @@ class OcrWorker:
         self, lines: list[str]
     ) -> list[dict[str, Any]]:
         """
-        Parse line items from the middle section of the receipt.
+        Parse line items from the receipt lines.
         Pattern: description [quantity] price
+        Quantity defaults to 1 when not present on the line.
         """
         items: list[dict[str, Any]] = []
         for line in lines:
             m = _LINE_ITEM_PATTERN.match(line.strip())
             if m:
-                name, qty, price = m.group(1), m.group(2), m.group(3)
+                name = m.group(1)
+                qty_str = m.group(2)   # None when quantity column absent
+                price_str = m.group(3)
                 try:
                     items.append({
                         "name": name.strip()[:120],
-                        "quantity": float(qty),
-                        "unitPrice": float(price.replace(",", "")),
+                        "quantity": float(qty_str) if qty_str else 1.0,
+                        "unitPrice": float(price_str.replace(",", "")),
                     })
                 except ValueError:
                     continue

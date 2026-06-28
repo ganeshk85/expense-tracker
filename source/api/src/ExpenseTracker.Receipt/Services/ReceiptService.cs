@@ -33,10 +33,13 @@ public sealed class ReceiptService(
 
         var extension = Path.GetExtension(file.FileName);
         var storedFileName = $"{Guid.NewGuid()}{extension}";
-        var userDir = Path.Combine(storageOptions.Value.ReceiptsPath, userId.ToString());
-        Directory.CreateDirectory(userDir);
-        var fullPath = Path.Combine(userDir, storedFileName);
+        var opts = storageOptions.Value;
 
+        // relativePath is what gets stored in the DB — portable across environments.
+        var relativePath = $"receipts/{userId}/{storedFileName}";
+        var fullPath = opts.Resolve(relativePath);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         await using (var stream = File.Create(fullPath))
         {
             await file.CopyToAsync(stream, ct);
@@ -46,7 +49,7 @@ public sealed class ReceiptService(
         {
             UploadedByUserId = userId,
             OriginalFileName = file.FileName,
-            StoragePath = fullPath,
+            StoragePath = relativePath,
             ContentType = file.ContentType,
             FileSizeBytes = file.Length
         };
@@ -54,6 +57,7 @@ public sealed class ReceiptService(
         await receipts.AddAsync(receipt, ct);
         await receipts.SaveChangesAsync(ct);
 
+        // Redis jobs receive the full path — Python needs to open the file directly.
         await EnqueueThumbnailJobAsync(receipt.Id, fullPath);
         await EnqueueOcrJobAsync(receipt.Id, fullPath, userId);
 
@@ -96,13 +100,14 @@ public sealed class ReceiptService(
         if (receipt.ThumbnailPath is null)
             throw new NotFoundException("Thumbnail", receiptId);
 
-        if (!File.Exists(receipt.ThumbnailPath))
+        var fullPath = storageOptions.Value.Resolve(receipt.ThumbnailPath);
+        if (!File.Exists(fullPath))
             throw new NotFoundException("Thumbnail file", receiptId);
 
         var ext = Path.GetExtension(receipt.ThumbnailPath).ToLowerInvariant();
         var contentType = ext == ".png" ? "image/png" : "image/jpeg";
 
-        return new ThumbnailFileResult(receipt.ThumbnailPath, contentType);
+        return new ThumbnailFileResult(fullPath, contentType);
     }
 
     public async Task UpdateThumbnailAsync(Guid receiptId, UpdateThumbnailRequest request, CancellationToken ct = default)
@@ -148,8 +153,24 @@ public sealed class ReceiptService(
 
 public sealed class StorageOptions
 {
-    public string ReceiptsPath { get; set; } = "/storage/receipts";
-    public string ThumbnailsPath { get; set; } = "/storage/thumbnails";
-    public string OcrJsonPath { get; set; } = "/storage/ocr-json";
-    public string AttachmentsPath { get; set; } = "/storage/attachments";
+    public string BasePath { get; set; } = "/storage";
+
+    public string ReceiptsPath => Path.Combine(BasePath, "receipts");
+    public string ThumbnailsPath => Path.Combine(BasePath, "thumbnails");
+    public string OcrJsonPath => Path.Combine(BasePath, "ocr-json");
+    public string AttachmentsPath => Path.Combine(BasePath, "attachments");
+
+    /// <summary>Convert an absolute path under BasePath to a portable relative path.</summary>
+    public string ToRelative(string fullPath)
+    {
+        var normalized = fullPath.Replace('\\', '/');
+        var baseNormalized = BasePath.Replace('\\', '/').TrimEnd('/') + '/';
+        return normalized.StartsWith(baseNormalized, StringComparison.OrdinalIgnoreCase)
+            ? normalized[baseNormalized.Length..]
+            : normalized;
+    }
+
+    /// <summary>Resolve a relative path stored in the database to an absolute file system path.</summary>
+    public string Resolve(string relativePath) =>
+        Path.Combine(BasePath, relativePath.Replace('/', Path.DirectorySeparatorChar));
 }

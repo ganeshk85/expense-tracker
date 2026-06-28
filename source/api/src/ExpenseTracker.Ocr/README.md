@@ -80,7 +80,7 @@ POST /receipts/upload  (.NET API)
                                                       ├─ 4. Parse fields
                                                       │       merchant, date, total, subtotal, tax, line items
                                                       ├─ 5. pyzbar — scan barcode
-                                                      └─ 6. Write raw JSON to /storage/ocr-json/{id}.json
+                                                      └─ 6. Write raw JSON to {base}/ocr-json/{id}.json
                                                             │
                                           ┌─────────────────┴──────────────────┐
                                        success                            failure (retry up to 3×)

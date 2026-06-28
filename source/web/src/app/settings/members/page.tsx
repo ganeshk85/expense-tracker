@@ -5,9 +5,9 @@ import { apiClient } from '@/api/client'
 import styles from './members.module.css'
 
 interface Member {
-  userId: string
+  id: string
   username: string
-  role: 'Owner' | 'AdultMember' | 'RestrictedMember'
+  role: 'Admin' | 'Contributor' | 'Reader'
   mfaEnabled: boolean
   isActive: boolean
 }
@@ -49,13 +49,13 @@ export default function MembersSettingsPage() {
     setToggleLoading(true)
 
     try {
-      await apiClient.patch(`/admin/users/${dialog.member.userId}/mfa`, {
+      await apiClient.patch(`/admin/users/${dialog.member.id}/mfa`, {
         enabled: dialog.targetEnabled,
       })
 
       setMembers(prev =>
         prev.map(m =>
-          m.userId === dialog.member.userId
+          m.id === dialog.member.id
             ? { ...m, mfaEnabled: dialog.targetEnabled }
             : m
         )
@@ -69,9 +69,9 @@ export default function MembersSettingsPage() {
   }
 
   const roleLabel: Record<Member['role'], string> = {
-    Owner: 'Owner',
-    AdultMember: 'Adult Member',
-    RestrictedMember: 'Restricted Member',
+    Admin: 'Admin',
+    Contributor: 'Contributor',
+    Reader: 'Reader',
   }
 
   return (
@@ -93,7 +93,7 @@ export default function MembersSettingsPage() {
             </thead>
             <tbody>
               {members.map(member => (
-                <tr key={member.userId} className={styles.tr}>
+                <tr key={member.id} className={styles.tr}>
                   <td className={styles.td}>{member.username}</td>
                   <td className={styles.td}>{roleLabel[member.role]}</td>
                   <td className={styles.td}>
