@@ -56,4 +56,21 @@ public interface IExpenseService
 
     Task DetachReceiptAsync(
         Guid expenseId, Guid receiptId, Guid userId, string userRole, CancellationToken ct = default);
+
+    // ── File Attachments ─────────────────────────────────────────────────────
+
+    Task<AttachmentListResponse> GetAttachmentsAsync(
+        Guid expenseId, Guid userId, string userRole, CancellationToken ct = default);
+
+    Task<ExpenseAttachmentResponse> AddAttachmentAsync(
+        Guid expenseId, Microsoft.AspNetCore.Http.IFormFile file,
+        Guid userId, string userRole, CancellationToken ct = default);
+
+    Task DeleteAttachmentAsync(
+        Guid expenseId, Guid attachmentId, Guid userId, string userRole, CancellationToken ct = default);
+
+    // ── Search ───────────────────────────────────────────────────────────────
+
+    Task<ExpenseListResponse> SearchAsync(
+        SearchExpensesRequest request, Guid userId, string userRole, CancellationToken ct = default);
 }

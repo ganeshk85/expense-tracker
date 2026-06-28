@@ -38,6 +38,15 @@ function IconExpenses() {
   )
 }
 
+function IconBudget() {
+  return (
+    <svg className={styles.navIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M12 6v6l4 2"/>
+    </svg>
+  )
+}
+
 function IconSettings() {
   return (
     <svg className={styles.navIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -88,6 +97,12 @@ export function NavSidebar() {
           <Link href="/expenses" className={linkClass('/expenses')} aria-current={ariaCurrent('/expenses')}>
             <IconExpenses />
             Expenses
+          </Link>
+        </li>
+        <li>
+          <Link href="/budgets" className={linkClass('/budgets')} aria-current={ariaCurrent('/budgets')}>
+            <IconBudget />
+            Budgets
           </Link>
         </li>
         <li>

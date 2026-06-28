@@ -85,7 +85,7 @@ public sealed class ReceiptService(
             ? $"/receipts/{receipt.Id}/thumbnail"
             : null;
 
-        return new ReceiptStatusResponse(receipt.Id, receipt.Status.ToString(), receipt.OcrRetryCount, thumbnailUrl);
+        return new ReceiptStatusResponse(receipt.Id, receipt.Status.ToString(), receipt.OcrRetryCount, thumbnailUrl, receipt.ImageQuality);
     }
 
     public async Task<ThumbnailFileResult> GetThumbnailAsync(

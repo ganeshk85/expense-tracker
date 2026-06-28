@@ -8,6 +8,9 @@ using ExpenseTracker.Audit.Repositories;
 using ExpenseTracker.Auth;
 using ExpenseTracker.Auth.Endpoints;
 using ExpenseTracker.Auth.Repositories;
+using ExpenseTracker.Budget;
+using ExpenseTracker.Budget.Endpoints;
+using ExpenseTracker.Budget.Repositories;
 using ExpenseTracker.Expense;
 using ExpenseTracker.Expense.Endpoints;
 using ExpenseTracker.Expense.Repositories;
@@ -98,6 +101,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
 // Storage options
 builder.Services.Configure<StorageOptions>(
     builder.Configuration.GetSection("Storage"));
+builder.Services.Configure<ExpenseTracker.Expense.Services.AttachmentStorageOptions>(
+    o => o.BasePath = builder.Configuration["Storage:BasePath"] ?? "/storage");
 
 // Repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -109,12 +114,16 @@ builder.Services.AddScoped<ExpenseRepository>();
 builder.Services.AddScoped<IExpenseRepository>(sp => sp.GetRequiredService<ExpenseRepository>());
 builder.Services.AddScoped<IExpenseManagementRepository>(sp => sp.GetRequiredService<ExpenseRepository>());
 
+// Budget repository (concrete impl lives in Api; interface in Budget module)
+builder.Services.AddScoped<IBudgetRepository, BudgetRepository>();
+
 // Modules
 builder.Services.AddAuthModule();
 builder.Services.AddReceiptModule();
 builder.Services.AddAuditModule();
 builder.Services.AddOcrModule();
 builder.Services.AddExpenseModule();
+builder.Services.AddBudgetModule();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -166,6 +175,7 @@ app.MapAuthEndpoints();
 app.MapReceiptEndpoints();
 app.MapAuditEndpoints();
 app.MapExpenseEndpoints();
+app.MapBudgetEndpoints();
 
 app.Run();
 

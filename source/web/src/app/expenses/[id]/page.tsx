@@ -1,19 +1,28 @@
 'use client'
 
-import { use, useEffect, useState, KeyboardEvent } from 'react'
+import { use, useEffect, useRef, useState, KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   assignShares,
   attachReceipt,
   correctExpense,
+  deleteAttachment,
   deleteExpense,
   detachReceipt,
+  getAttachments,
   getExpense,
   getSession,
   updateExpense,
+  uploadAttachment,
 } from '@/api/expenses'
-import type { ExpenseResponse, ExpenseShareResponse, ReceiptSummaryResponse, SessionResponse } from '@/api/types'
+import type {
+  ExpenseAttachmentResponse,
+  ExpenseResponse,
+  ExpenseShareResponse,
+  ReceiptSummaryResponse,
+  SessionResponse,
+} from '@/api/types'
 import styles from './expense-detail.module.css'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000'
@@ -140,6 +149,12 @@ export default function ExpenseDetailPage({
   const [attaching, setAttaching] = useState(false)
   const [detachTarget, setDetachTarget] = useState<string | null>(null)
 
+  // US-EXP-03: File attachments state
+  const [attachments, setAttachments] = useState<ExpenseAttachmentResponse[]>([])
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(true)
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const today = new Date().toISOString().split('T').at(0) ?? ''
 
   function populateForm(e: ExpenseResponse) {
@@ -176,9 +191,14 @@ export default function ExpenseDetailPage({
   useEffect(() => {
     async function load() {
       try {
-        const [e, sess] = await Promise.all([getExpense(id), getSession()])
+        const [e, sess, attachList] = await Promise.all([
+          getExpense(id),
+          getSession(),
+          getAttachments(id),
+        ])
         setExpense(e)
         setSession(sess)
+        setAttachments(attachList.attachments)
         populateForm(e)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load expense.')
@@ -405,6 +425,35 @@ export default function ExpenseDetailPage({
     }
   }
 
+  // US-EXP-03: File attachment handlers
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setUploadingFile(true)
+    setError(null)
+    try {
+      const added = await uploadAttachment(id, file)
+      setAttachments(prev => [...prev, added])
+      setSuccess('Attachment uploaded.')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload attachment.')
+    } finally {
+      setUploadingFile(false)
+    }
+  }
+
+  async function handleDeleteAttachment(attachmentId: string) {
+    setError(null)
+    try {
+      await deleteAttachment(id, attachmentId)
+      setAttachments(prev => prev.filter(a => a.id !== attachmentId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete attachment.')
+    }
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   if (loading) return <main className={styles.container}><p className={styles.loadingText}>Loading…</p></main>
@@ -419,6 +468,7 @@ export default function ExpenseDetailPage({
   }
 
   const isAdmin = session?.role === 'Admin'
+  const isReader = session?.role === 'Reader'
   const receipts: ReceiptSummaryResponse[] = expense.receipts
   const existingShares: ExpenseShareResponse[] = expense.shares
 
@@ -447,6 +497,12 @@ export default function ExpenseDetailPage({
             <strong>OCR data needs review</strong>
             Fields highlighted with low confidence may need correction. Review and click &ldquo;Confirm Expense&rdquo; when done.
           </div>
+        </div>
+      )}
+
+      {isReader && (
+        <div role="status" className={styles.readerBanner}>
+          You have view-only access. You can view this expense but cannot make changes.
         </div>
       )}
 
@@ -622,6 +678,27 @@ export default function ExpenseDetailPage({
             />
           </div>
         </div>
+
+        {/* ── Barcode (US-OCR-04) ── */}
+        {(expense.barcode ?? expense.barcodeType) && (
+          <div className={styles.section}>
+            <h2 className={styles.sectionTitle}>Barcode</h2>
+            <div className={styles.fieldRow}>
+              {expense.barcodeType && (
+                <div className={styles.field}>
+                  <p className={styles.label}>Type</p>
+                  <p className={styles.readonlyValue}>{expense.barcodeType}</p>
+                </div>
+              )}
+              {expense.barcode && (
+                <div className={styles.field}>
+                  <p className={styles.label}>Value</p>
+                  <p className={styles.readonlyValue}>{expense.barcode}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Line Items (US-EXP-06) ── */}
         <div className={styles.section}>
@@ -929,35 +1006,95 @@ export default function ExpenseDetailPage({
           </div>
         )}
 
-        {/* ── Form actions ── */}
-        <div className={styles.formActions}>
-          <button
-            type="button"
-            className={styles.deleteButton}
-            onClick={() => setShowDeleteDialog(true)}
-          >
-            Delete
-          </button>
-          <div className={styles.formActionsRight}>
-            {hasOcrData && (
-              <button
-                type="button"
-                className={styles.confirmButton}
-                disabled={confirming || saving}
-                onClick={handleConfirmCorrections}
-              >
-                {confirming ? 'Confirming…' : 'Confirm Expense'}
-              </button>
-            )}
-            <button
-              type="submit"
-              className={styles.primaryButton}
-              disabled={saving || confirming}
-            >
-              {saving ? 'Saving…' : 'Save Changes'}
+        {/* ── File Attachments (US-EXP-03) ── */}
+        <div className={styles.section}>
+          <div className={styles.sectionHeader} onClick={() => setAttachmentsExpanded(v => !v)}>
+            <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+              Attachments {attachments.length > 0 && `(${attachments.length})`}
+            </h2>
+            <button type="button" className={styles.collapseToggle} aria-label={attachmentsExpanded ? 'Collapse' : 'Expand'}>
+              {attachmentsExpanded ? '▲ Collapse' : '▼ Expand'}
             </button>
           </div>
+
+          {attachmentsExpanded && (
+            <>
+              {attachments.length > 0 && (
+                <ul className={styles.attachmentList}>
+                  {attachments.map(a => (
+                    <li key={a.id} className={styles.attachmentItem}>
+                      <span className={styles.attachmentName} title={a.fileName}>{a.fileName}</span>
+                      <span className={styles.attachmentMeta}>
+                        {(a.fileSizeBytes / 1024).toFixed(0)} KB
+                      </span>
+                      {!isReader && (
+                        <button
+                          type="button"
+                          className={styles.removeItemButton}
+                          onClick={() => void handleDeleteAttachment(a.id)}
+                          aria-label={`Delete ${a.fileName}`}
+                        >×</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {!isReader && (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className={styles.hiddenInput}
+                    onChange={handleFileUpload}
+                    accept=".jpg,.jpeg,.png,.pdf,.txt,.doc,.docx"
+                    aria-hidden="true"
+                  />
+                  <button
+                    type="button"
+                    className={styles.addItemButton}
+                    disabled={uploadingFile}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {uploadingFile ? 'Uploading…' : '+ Upload attachment'}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
+
+        {/* ── Form actions ── */}
+        {!isReader && (
+          <div className={styles.formActions}>
+            <button
+              type="button"
+              className={styles.deleteButton}
+              onClick={() => setShowDeleteDialog(true)}
+            >
+              Delete
+            </button>
+            <div className={styles.formActionsRight}>
+              {hasOcrData && (
+                <button
+                  type="button"
+                  className={styles.confirmButton}
+                  disabled={confirming || saving}
+                  onClick={handleConfirmCorrections}
+                >
+                  {confirming ? 'Confirming…' : 'Confirm Expense'}
+                </button>
+              )}
+              <button
+                type="submit"
+                className={styles.primaryButton}
+                disabled={saving || confirming}
+              >
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        )}
       </form>
 
       {/* ── Delete dialog ── */}

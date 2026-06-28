@@ -10,7 +10,8 @@ public sealed record ReceiptStatusResponse(
     Guid ReceiptId,
     string Status,
     int OcrRetryCount,
-    string? ThumbnailUrl);
+    string? ThumbnailUrl,
+    string? ImageQuality);
 
 public sealed record UpdateThumbnailRequest(string ThumbnailPath);
 

@@ -1,6 +1,7 @@
 using ExpenseTracker.Expense.Repositories;
 using ExpenseTracker.Ocr.Repositories;
 using Microsoft.EntityFrameworkCore;
+using ExpenseAttachmentEntity = ExpenseTracker.Ocr.Entities.ExpenseAttachment;
 using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
 using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
 using ExpenseShareEntity = ExpenseTracker.Ocr.Entities.ExpenseShare;
@@ -162,6 +163,102 @@ internal sealed class ExpenseRepository(AppDbContext db)
 
     public Task<ReceiptEntity?> FindReceiptByIdTrackedAsync(Guid receiptId, CancellationToken ct = default)
         => db.Receipts.FirstOrDefaultAsync(r => r.Id == receiptId, ct);
+
+    // ── IExpenseManagementRepository — Attachments ──────────────────────────
+
+    public async Task<IReadOnlyList<ExpenseAttachmentEntity>> GetAttachmentsByExpenseIdAsync(
+        Guid expenseId, CancellationToken ct = default)
+        => await db.ExpenseAttachments
+                   .AsNoTracking()
+                   .Where(a => a.ExpenseId == expenseId)
+                   .OrderBy(a => a.CreatedAt)
+                   .ToListAsync(ct);
+
+    public Task<ExpenseAttachmentEntity?> FindAttachmentByIdAsync(
+        Guid attachmentId, Guid expenseId, CancellationToken ct = default)
+        => db.ExpenseAttachments
+              .FirstOrDefaultAsync(a => a.Id == attachmentId && a.ExpenseId == expenseId, ct);
+
+    public async Task AddAttachmentAsync(ExpenseAttachmentEntity attachment, CancellationToken ct = default)
+        => await db.ExpenseAttachments.AddAsync(attachment, ct);
+
+    public Task RemoveAttachmentAsync(ExpenseAttachmentEntity attachment, CancellationToken ct = default)
+    {
+        db.ExpenseAttachments.Remove(attachment);
+        return Task.CompletedTask;
+    }
+
+    // ── IExpenseManagementRepository — Search ────────────────────────────────
+
+    public async Task<(IReadOnlyList<ExpenseEntity> Items, int Total)> SearchAsync(
+        Guid? userId, string? userRole,
+        string? q, string? category, string? merchant,
+        DateTimeOffset? dateFrom, DateTimeOffset? dateTo,
+        decimal? minAmount, decimal? maxAmount, string[]? tags,
+        int page, int pageSize, CancellationToken ct = default)
+    {
+        var query = db.Expenses
+            .Include(e => e.Items)
+            .Include(e => e.Shares)
+            .AsNoTracking();
+
+        // Visibility filter (mirrors ListAsync logic)
+        if (userId.HasValue)
+        {
+            if (userRole == ContributorRole)
+            {
+                var uid = userId.Value;
+                query = query.Where(e =>
+                    e.UserId == uid ||
+                    (e.IsShared && e.Shares.Any(s => s.UserId == uid)));
+            }
+            else
+            {
+                query = query.Where(e => e.UserId == userId.Value);
+            }
+        }
+
+        // Full-text filter (merchant name OR notes, case-insensitive)
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var qLower = q.ToLower();
+            query = query.Where(e =>
+                (e.MerchantName != null && EF.Functions.ILike(e.MerchantName, $"%{qLower}%")) ||
+                (e.Notes != null && EF.Functions.ILike(e.Notes, $"%{qLower}%")));
+        }
+
+        if (!string.IsNullOrWhiteSpace(category))
+            query = query.Where(e => e.Category == category);
+
+        if (!string.IsNullOrWhiteSpace(merchant))
+            query = query.Where(e => e.MerchantName != null &&
+                EF.Functions.ILike(e.MerchantName, $"%{merchant}%"));
+
+        if (dateFrom.HasValue)
+            query = query.Where(e => e.Date >= dateFrom.Value);
+
+        if (dateTo.HasValue)
+            query = query.Where(e => e.Date <= dateTo.Value);
+
+        if (minAmount.HasValue)
+            query = query.Where(e => e.Total >= minAmount.Value);
+
+        if (maxAmount.HasValue)
+            query = query.Where(e => e.Total <= maxAmount.Value);
+
+        if (tags is { Length: > 0 })
+            query = query.Where(e => tags.All(t => e.Tags.Contains(t)));
+
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderByDescending(e => e.Date ?? e.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return (items.AsReadOnly(), total);
+    }
 
     // ── Shared ───────────────────────────────────────────────────────────────
 

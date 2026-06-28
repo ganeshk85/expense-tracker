@@ -61,6 +61,21 @@ public static class ExpenseEndpoints
         group.MapDelete("/{id:guid}/receipts/{receiptId:guid}", HandleDetachReceipt)
             .WithSummary("Detach a receipt from an expense (does not delete the receipt file)");
 
+        // ── File Attachments ──────────────────────────────────────────────────
+        group.MapGet("/{id:guid}/attachments", HandleGetAttachments)
+            .WithSummary("List file attachments for an expense");
+
+        group.MapPost("/{id:guid}/attachments", HandleUploadAttachment)
+            .WithSummary("Upload a file attachment to an expense")
+            .DisableAntiforgery();
+
+        group.MapDelete("/{id:guid}/attachments/{attachId:guid}", HandleDeleteAttachment)
+            .WithSummary("Delete a file attachment");
+
+        // ── Search ────────────────────────────────────────────────────────────
+        group.MapGet("/search", HandleSearch)
+            .WithSummary("Multi-field search across expenses");
+
         return app;
     }
 
@@ -271,6 +286,80 @@ public static class ExpenseEndpoints
 
         await service.DetachReceiptAsync(id, receiptId, userId.Value, role, ct);
         return Results.NoContent();
+    }
+
+    // ── File Attachment handlers ──────────────────────────────────────────────
+
+    private static async Task<IResult> HandleGetAttachments(
+        Guid id,
+        IExpenseService service,
+        HttpContext ctx,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(ctx);
+        if (userId is null) return Results.Problem("Session invalid.", statusCode: 401);
+        var role = ctx.Session.GetString(SessionRoleKey) ?? string.Empty;
+
+        var result = await service.GetAttachmentsAsync(id, userId.Value, role, ct);
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> HandleUploadAttachment(
+        Guid id,
+        IFormFile file,
+        IExpenseService service,
+        HttpContext ctx,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(ctx);
+        if (userId is null) return Results.Problem("Session invalid.", statusCode: 401);
+        var role = ctx.Session.GetString(SessionRoleKey) ?? string.Empty;
+
+        var result = await service.AddAttachmentAsync(id, file, userId.Value, role, ct);
+        return Results.Created($"/expenses/{id}/attachments/{result.Id}", result);
+    }
+
+    private static async Task<IResult> HandleDeleteAttachment(
+        Guid id,
+        Guid attachId,
+        IExpenseService service,
+        HttpContext ctx,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(ctx);
+        if (userId is null) return Results.Problem("Session invalid.", statusCode: 401);
+        var role = ctx.Session.GetString(SessionRoleKey) ?? string.Empty;
+
+        await service.DeleteAttachmentAsync(id, attachId, userId.Value, role, ct);
+        return Results.NoContent();
+    }
+
+    // ── Search handler ────────────────────────────────────────────────────────
+
+    private static async Task<IResult> HandleSearch(
+        IExpenseService service,
+        HttpContext ctx,
+        CancellationToken ct,
+        string? q = null,
+        string? category = null,
+        string? merchant = null,
+        DateTimeOffset? dateFrom = null,
+        DateTimeOffset? dateTo = null,
+        decimal? minAmount = null,
+        decimal? maxAmount = null,
+        string[]? tags = null,
+        int page = 1,
+        int pageSize = 50)
+    {
+        var userId = GetUserId(ctx);
+        if (userId is null) return Results.Problem("Session invalid.", statusCode: 401);
+        var role = ctx.Session.GetString(SessionRoleKey) ?? string.Empty;
+
+        var request = new SearchExpensesRequest(q, category, merchant, dateFrom, dateTo,
+            minAmount, maxAmount, tags, page, pageSize);
+
+        var result = await service.SearchAsync(request, userId.Value, role, ct);
+        return Results.Ok(result);
     }
 
     // ── Session helpers ───────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 using ExpenseTracker.Audit.Entities;
 using ExpenseTracker.Auth.Entities;
 using Microsoft.EntityFrameworkCore;
+using BudgetEntity = ExpenseTracker.Budget.Entities.Budget;
+using ExpenseAttachmentEntity = ExpenseTracker.Ocr.Entities.ExpenseAttachment;
 using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
 using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
 using ExpenseShareEntity = ExpenseTracker.Ocr.Entities.ExpenseShare;
@@ -17,6 +19,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ExpenseEntity> Expenses => Set<ExpenseEntity>();
     public DbSet<ExpenseItemEntity> ExpenseItems => Set<ExpenseItemEntity>();
     public DbSet<ExpenseShareEntity> ExpenseShares => Set<ExpenseShareEntity>();
+    public DbSet<ExpenseAttachmentEntity> ExpenseAttachments => Set<ExpenseAttachmentEntity>();
+    public DbSet<BudgetEntity> Budgets => Set<BudgetEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,6 +45,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.ToTable("receipts");
             e.HasKey(r => r.Id);
             e.Property(r => r.Status).HasConversion<string>();
+            e.Property(r => r.ImageQuality).HasMaxLength(8);
             // ExpenseId links a receipt to an expense for multi-receipt support.
             // Stored as a plain column; no FK constraint to avoid circular reference with expenses.ReceiptId.
             e.Property(r => r.ExpenseId);
@@ -75,6 +80,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.Category).HasMaxLength(64);
             e.Property(x => x.Tags).HasColumnType("text[]");
             e.Property(x => x.ConfidenceJson).HasColumnType("jsonb");
+            e.Property(x => x.BarcodeType).HasMaxLength(32);
             // ReceiptId is nullable — manual expenses have no associated receipt.
             e.HasOne<ReceiptEntity>()
              .WithMany()
@@ -113,6 +119,31 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
              .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(s => s.ExpenseId);
             e.HasIndex(s => s.UserId);
+        });
+
+        modelBuilder.Entity<ExpenseAttachmentEntity>(e =>
+        {
+            e.HasKey(a => a.Id);
+            e.ToTable("expense_attachments");
+            e.Property(a => a.FileName).HasMaxLength(255).IsRequired();
+            e.Property(a => a.StoragePath).HasMaxLength(1024).IsRequired();
+            e.Property(a => a.ContentType).HasMaxLength(128).IsRequired();
+            e.Property(a => a.CreatedAt).HasDefaultValueSql("now()");
+            e.HasOne<ExpenseEntity>()
+             .WithMany()
+             .HasForeignKey(a => a.ExpenseId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(a => a.ExpenseId);
+        });
+
+        modelBuilder.Entity<BudgetEntity>(e =>
+        {
+            e.HasKey(b => b.Id);
+            e.ToTable("budgets");
+            e.Property(b => b.Category).HasMaxLength(64).IsRequired();
+            e.Property(b => b.MonthlyLimit).HasColumnType("numeric(18,4)").IsRequired();
+            e.Property(b => b.CreatedAt).HasDefaultValueSql("now()");
+            e.HasIndex(b => new { b.UserId, b.Category }).IsUnique();
         });
     }
 }

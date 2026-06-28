@@ -41,6 +41,7 @@ export interface ReceiptStatusResponse {
   status: 'Uploaded' | 'Processing' | 'Complete' | 'OcrFailed'
   ocrRetryCount: number
   thumbnailUrl: string | null
+  imageQuality: 'good' | 'low' | null
 }
 
 export interface ApiError {
@@ -94,6 +95,19 @@ export interface ReceiptSummaryResponse {
 
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
+export interface ExpenseAttachmentResponse {
+  id: string
+  fileName: string
+  contentType: string
+  fileSizeBytes: number
+  downloadUrl: string
+  createdAt: string
+}
+
+export interface AttachmentListResponse {
+  attachments: ExpenseAttachmentResponse[]
+}
+
 export interface ExpenseResponse {
   id: string
   receiptId: string | null
@@ -111,10 +125,13 @@ export interface ExpenseResponse {
   source: 'OCR' | 'Manual'
   ocrStatus: string
   confidenceJson: string | null
+  barcode: string | null
+  barcodeType: string | null
   items: ExpenseItemResponse[]
   isShared: boolean
   shares: ExpenseShareResponse[]
   receipts: ReceiptSummaryResponse[]
+  attachments: ExpenseAttachmentResponse[]
   createdAt: string
   updatedAt: string
 }
@@ -165,4 +182,42 @@ export interface CreateExpenseItemRequest {
   name: string
   quantity: number
   unitPrice: number
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+export interface SearchExpensesParams {
+  q?: string
+  category?: string
+  merchant?: string
+  dateFrom?: string
+  dateTo?: string
+  minAmount?: number
+  maxAmount?: number
+  tags?: string[]
+  page?: number
+  pageSize?: number
+}
+
+// ── Budgets ───────────────────────────────────────────────────────────────────
+
+export interface BudgetResponse {
+  id: string
+  category: string
+  monthlyLimit: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BudgetListResponse {
+  items: BudgetResponse[]
+}
+
+export interface CreateBudgetRequest {
+  category: string
+  monthlyLimit: number
+}
+
+export interface UpdateBudgetRequest {
+  monthlyLimit: number
 }

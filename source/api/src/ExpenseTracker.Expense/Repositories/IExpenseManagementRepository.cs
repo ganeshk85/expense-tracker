@@ -1,3 +1,4 @@
+using ExpenseAttachmentEntity = ExpenseTracker.Ocr.Entities.ExpenseAttachment;
 using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
 using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
 using ExpenseShareEntity = ExpenseTracker.Ocr.Entities.ExpenseShare;
@@ -42,6 +43,22 @@ public interface IExpenseManagementRepository
     Task<IReadOnlyList<ReceiptEntity>> GetReceiptsByExpenseIdAsync(Guid expenseId, CancellationToken ct = default);
 
     Task<ReceiptEntity?> FindReceiptByIdTrackedAsync(Guid receiptId, CancellationToken ct = default);
+
+    // ── Attachments ──────────────────────────────────────────────────────────
+
+    Task<IReadOnlyList<ExpenseAttachmentEntity>> GetAttachmentsByExpenseIdAsync(Guid expenseId, CancellationToken ct = default);
+    Task<ExpenseAttachmentEntity?> FindAttachmentByIdAsync(Guid attachmentId, Guid expenseId, CancellationToken ct = default);
+    Task AddAttachmentAsync(ExpenseAttachmentEntity attachment, CancellationToken ct = default);
+    Task RemoveAttachmentAsync(ExpenseAttachmentEntity attachment, CancellationToken ct = default);
+
+    // ── Search ───────────────────────────────────────────────────────────────
+
+    Task<(IReadOnlyList<ExpenseEntity> Items, int Total)> SearchAsync(
+        Guid? userId, string? userRole,
+        string? q, string? category, string? merchant,
+        DateTimeOffset? dateFrom, DateTimeOffset? dateTo,
+        decimal? minAmount, decimal? maxAmount, string[]? tags,
+        int page, int pageSize, CancellationToken ct = default);
 
     // ── Shared ───────────────────────────────────────────────────────────────
 

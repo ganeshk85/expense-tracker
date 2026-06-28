@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { deleteExpense, getExpenses, getSession } from '@/api/expenses'
-import type { ExpenseResponse, SessionResponse } from '@/api/types'
+import { deleteExpense, getExpenses, getSession, searchExpenses } from '@/api/expenses'
+import type { ExpenseResponse, SearchExpensesParams, SessionResponse } from '@/api/types'
 import styles from './expenses.module.css'
 
 type DeleteState = { expenseId: string } | null
@@ -47,7 +47,19 @@ export default function ExpensesPage() {
   const [deleteState, setDeleteState] = useState<DeleteState>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Search / filter state (US-SRCH-01)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchCategory, setSearchCategory] = useState('')
+  const [searchMerchant, setSearchMerchant] = useState('')
+  const [searchDateFrom, setSearchDateFrom] = useState('')
+  const [searchDateTo, setSearchDateTo] = useState('')
+  const [searchMinAmount, setSearchMinAmount] = useState('')
+  const [searchMaxAmount, setSearchMaxAmount] = useState('')
+  const [isSearchActive, setIsSearchActive] = useState(false)
+
   const isAdmin = session?.role === 'Admin'
+  const isReader = session?.role === 'Reader'
 
   async function loadSession() {
     try {
@@ -94,6 +106,41 @@ export default function ExpensesPage() {
     }
   }
 
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    const params: SearchExpensesParams = {}
+    if (searchQ) params.q = searchQ
+    if (searchCategory) params.category = searchCategory
+    if (searchMerchant) params.merchant = searchMerchant
+    if (searchDateFrom) params.dateFrom = new Date(searchDateFrom).toISOString()
+    if (searchDateTo) params.dateTo = new Date(searchDateTo).toISOString()
+    if (searchMinAmount) params.minAmount = parseFloat(searchMinAmount)
+    if (searchMaxAmount) params.maxAmount = parseFloat(searchMaxAmount)
+    try {
+      const res = await searchExpenses(params)
+      setExpenses(res.items)
+      setIsSearchActive(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Search failed.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleClearSearch() {
+    setSearchQ('')
+    setSearchCategory('')
+    setSearchMerchant('')
+    setSearchDateFrom('')
+    setSearchDateTo('')
+    setSearchMinAmount('')
+    setSearchMaxAmount('')
+    setIsSearchActive(false)
+    void loadExpenses()
+  }
+
   function handleRowClick(e: React.MouseEvent, id: string) {
     // Prevent row navigation when clicking the delete button area
     const target = e.target as HTMLElement
@@ -122,11 +169,128 @@ export default function ExpensesPage() {
               </button>
             </div>
           )}
-          <Link href="/expenses/new" className={styles.primaryButton}>
-            + New Expense
-          </Link>
+          <button
+            className={styles.secondaryButton}
+            onClick={() => setSearchOpen(v => !v)}
+            aria-expanded={searchOpen}
+          >
+            {searchOpen ? 'Hide Filters' : 'Search / Filter'}
+          </button>
+          {!isReader && (
+            <Link href="/expenses/new" className={styles.primaryButton}>
+              + New Expense
+            </Link>
+          )}
         </div>
       </div>
+
+      {/* US-REC-06: Reader banner */}
+      {isReader && (
+        <div role="status" className={styles.readerBanner}>
+          You have view-only access. You can view expenses but cannot create or delete them.
+        </div>
+      )}
+
+      {/* US-SRCH-01: Search panel */}
+      {searchOpen && (
+        <form onSubmit={handleSearch} className={styles.searchPanel} noValidate>
+          <div className={styles.searchGrid}>
+            <div className={styles.searchField}>
+              <label htmlFor="searchQ" className={styles.searchLabel}>Keywords</label>
+              <input
+                id="searchQ"
+                type="text"
+                className={styles.searchInput}
+                value={searchQ}
+                onChange={e => setSearchQ(e.target.value)}
+                placeholder="Merchant name or notes…"
+              />
+            </div>
+            <div className={styles.searchField}>
+              <label htmlFor="searchCategory" className={styles.searchLabel}>Category</label>
+              <select
+                id="searchCategory"
+                className={styles.searchInput}
+                value={searchCategory}
+                onChange={e => setSearchCategory(e.target.value)}
+              >
+                <option value="">All categories</option>
+                {['Groceries', 'Dining', 'Utilities', 'Transport', 'Health', 'Other'].map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.searchField}>
+              <label htmlFor="searchMerchant" className={styles.searchLabel}>Merchant</label>
+              <input
+                id="searchMerchant"
+                type="text"
+                className={styles.searchInput}
+                value={searchMerchant}
+                onChange={e => setSearchMerchant(e.target.value)}
+                placeholder="Merchant name…"
+              />
+            </div>
+            <div className={styles.searchField}>
+              <label htmlFor="searchDateFrom" className={styles.searchLabel}>Date from</label>
+              <input
+                id="searchDateFrom"
+                type="date"
+                className={styles.searchInput}
+                value={searchDateFrom}
+                onChange={e => setSearchDateFrom(e.target.value)}
+              />
+            </div>
+            <div className={styles.searchField}>
+              <label htmlFor="searchDateTo" className={styles.searchLabel}>Date to</label>
+              <input
+                id="searchDateTo"
+                type="date"
+                className={styles.searchInput}
+                value={searchDateTo}
+                onChange={e => setSearchDateTo(e.target.value)}
+              />
+            </div>
+            <div className={styles.searchField}>
+              <label htmlFor="searchMinAmount" className={styles.searchLabel}>Min amount</label>
+              <input
+                id="searchMinAmount"
+                type="number"
+                className={styles.searchInput}
+                value={searchMinAmount}
+                onChange={e => setSearchMinAmount(e.target.value)}
+                placeholder="0.00"
+                min="0"
+                step="0.01"
+              />
+            </div>
+            <div className={styles.searchField}>
+              <label htmlFor="searchMaxAmount" className={styles.searchLabel}>Max amount</label>
+              <input
+                id="searchMaxAmount"
+                type="number"
+                className={styles.searchInput}
+                value={searchMaxAmount}
+                onChange={e => setSearchMaxAmount(e.target.value)}
+                placeholder="0.00"
+                min="0"
+                step="0.01"
+              />
+            </div>
+          </div>
+          <div className={styles.searchActions}>
+            <button type="submit" className={styles.primaryButton}>Search</button>
+            {isSearchActive && (
+              <button type="button" className={styles.secondaryButton} onClick={handleClearSearch}>
+                Clear
+              </button>
+            )}
+          </div>
+          {isSearchActive && (
+            <p className={styles.searchActiveNote}>Showing search results. Clear filters to restore full list.</p>
+          )}
+        </form>
+      )}
 
       {error && <p role="alert" className={styles.error}>{error}</p>}
 
@@ -191,31 +355,33 @@ export default function ExpensesPage() {
                     )}
                   </td>
                   <td className={styles.tdActions}>
-                    {deleteState?.expenseId === expense.id ? (
-                      <span className={styles.confirmInline}>
-                        Delete?
+                    {!isReader && (
+                      deleteState?.expenseId === expense.id ? (
+                        <span className={styles.confirmInline}>
+                          Delete?
+                          <button
+                            className={styles.confirmYes}
+                            disabled={deleting}
+                            onClick={() => handleDelete(expense.id)}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            className={styles.confirmNo}
+                            disabled={deleting}
+                            onClick={() => setDeleteState(null)}
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
                         <button
-                          className={styles.confirmYes}
-                          disabled={deleting}
-                          onClick={() => handleDelete(expense.id)}
+                          className={styles.deleteButton}
+                          onClick={() => setDeleteState({ expenseId: expense.id })}
                         >
-                          Yes
+                          Delete
                         </button>
-                        <button
-                          className={styles.confirmNo}
-                          disabled={deleting}
-                          onClick={() => setDeleteState(null)}
-                        >
-                          No
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        className={styles.deleteButton}
-                        onClick={() => setDeleteState({ expenseId: expense.id })}
-                      >
-                        Delete
-                      </button>
+                      )
                     )}
                   </td>
                 </tr>

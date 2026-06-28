@@ -201,6 +201,7 @@ public sealed class OcrResultConsumerService(
                 TaxAmount = result.TaxAmount,
                 Total = result.Total,
                 Barcode = result.Barcode,
+                BarcodeType = result.BarcodeType,
                 ConfidenceJson = confidenceJson,
                 OcrStatus = OcrStatusValue.Complete,
                 Source = ExpenseSource.Ocr,
@@ -218,6 +219,7 @@ public sealed class OcrResultConsumerService(
             existing.TaxAmount = result.TaxAmount;
             existing.Total = result.Total;
             existing.Barcode = result.Barcode;
+            existing.BarcodeType = result.BarcodeType;
             existing.ConfidenceJson = confidenceJson;
             existing.OcrStatus = OcrStatusValue.Complete;
             existing.UpdatedAt = DateTimeOffset.UtcNow;
@@ -227,10 +229,11 @@ public sealed class OcrResultConsumerService(
 
         await expenseRepo.SaveChangesAsync(ct);
 
-        // receipt was loaded above to resolve ownerId — update its status in the same context.
+        // receipt was loaded above to resolve ownerId — update its status and quality.
         if (receipt is not null)
         {
             receipt.Status = ReceiptStatus.Complete;
+            receipt.ImageQuality = result.ImageQuality;
             receipt.UpdatedAt = DateTimeOffset.UtcNow;
             await receiptRepo.SaveChangesAsync(ct);
         }

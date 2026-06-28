@@ -81,18 +81,48 @@ public sealed record ExpenseResponse(
     string Source,
     string OcrStatus,
     string? ConfidenceJson,
+    string? Barcode,
+    string? BarcodeType,
     IReadOnlyList<ExpenseItemResponse> Items,
     bool IsShared,
     IReadOnlyList<ExpenseShareResponse> Shares,
     IReadOnlyList<ReceiptSummaryResponse> Receipts,
+    IReadOnlyList<ExpenseAttachmentResponse> Attachments,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
+
+// ── Attachment models ────────────────────────────────────────────────────────
+
+public sealed record ExpenseAttachmentResponse(
+    Guid Id,
+    string FileName,
+    string ContentType,
+    long FileSizeBytes,
+    string DownloadUrl,
+    DateTimeOffset CreatedAt);
+
+public sealed record AttachmentListResponse(IReadOnlyList<ExpenseAttachmentResponse> Attachments);
 
 public sealed record ExpenseListResponse(
     IReadOnlyList<ExpenseResponse> Items,
     int Total,
     int Page,
     int PageSize);
+
+// ── Search ───────────────────────────────────────────────────────────────────
+
+/// <summary>All parameters are optional; only supplied parameters filter the result set.</summary>
+public sealed record SearchExpensesRequest(
+    string? Q,
+    string? Category,
+    string? Merchant,
+    DateTimeOffset? DateFrom,
+    DateTimeOffset? DateTo,
+    decimal? MinAmount,
+    decimal? MaxAmount,
+    string[]? Tags,
+    int Page = 1,
+    int PageSize = 50);
 
 public static class ExpenseCategory
 {

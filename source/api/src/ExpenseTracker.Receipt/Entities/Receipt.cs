@@ -15,6 +15,9 @@ public sealed class Receipt : BaseEntity
 
     /// <summary>Set when a receipt is attached to an expense. Null for unattached receipts.</summary>
     public Guid? ExpenseId { get; set; }
+
+    /// <summary>"good" | "low" — set by OCR worker after preprocessing analysis. Null until OCR completes.</summary>
+    public string? ImageQuality { get; set; }
 }
 
 public enum ReceiptStatus

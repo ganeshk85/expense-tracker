@@ -215,8 +215,8 @@ class OcrWorker:
         original_pil = self._load_image(src)
         original_cv = cv2.cvtColor(np.array(original_pil), cv2.COLOR_RGB2BGR)
 
-        # 2. Scan barcode on original (unprocessed) image.
-        barcode = self._scan_barcode(original_cv)
+        # 2. Scan barcode/QR on original (unprocessed) image.
+        barcode = self._scan_barcode(original_cv)  # returns (data, type) tuple
 
         # 3. Preprocess.
         preprocessed = self._preprocess(original_cv)
@@ -245,6 +245,8 @@ class OcrWorker:
         # 6. Write raw OCR JSON.
         raw_ocr_path = self._write_raw_ocr(receipt_id, tess_data, full_text)
 
+        barcode_data, barcode_type = barcode
+
         return {
             "receiptId": receipt_id,
             "status": "complete",
@@ -256,7 +258,9 @@ class OcrWorker:
             "taxAmount": tax_amount,
             "total": total,
             "lineItems": line_items,
-            "barcode": barcode,
+            "barcode": barcode_data,
+            "barcodeType": barcode_type,
+            "imageQuality": self._compute_image_quality(original_cv),
             "confidence": {
                 "merchantName": merchant_conf,
                 "date": date_conf,
@@ -492,19 +496,57 @@ class OcrWorker:
 
     # ── Barcode ──────────────────────────────────────────────────────────────────
 
-    def _scan_barcode(self, img: np.ndarray) -> str | None:  # type: ignore[type-arg]
-        """Scan the original image for barcodes using pyzbar."""
+    def _scan_barcode(
+        self, img: np.ndarray  # type: ignore[type-arg]
+    ) -> tuple[str | None, str | None]:
+        """Scan the original image for barcodes and QR codes using pyzbar.
+
+        Returns:
+            A tuple of (decoded_data, barcode_type) where barcode_type is the
+            pyzbar symbol type string (e.g. "QRCODE", "CODE128", "EAN13").
+            Both values are None when no code is found or pyzbar is unavailable.
+        """
         try:
             from pyzbar.pyzbar import decode  # type: ignore[import-untyped]
 
             decoded = decode(img)
             if decoded:
-                return decoded[0].data.decode("utf-8", errors="replace")
+                symbol = decoded[0]
+                data = symbol.data.decode("utf-8", errors="replace")
+                barcode_type = symbol.type  # e.g. "QRCODE", "CODE128", "EAN13"
+                return data, barcode_type
         except ImportError:
             logger.warning("pyzbar not installed — barcode scanning skipped")
         except Exception:
             logger.exception("Barcode scan failed — continuing without barcode data")
-        return None
+        return None, None
+
+    def _compute_image_quality(self, img: np.ndarray) -> str:  # type: ignore[type-arg]
+        """Estimate image quality using Laplacian variance (blur) and RMS contrast.
+
+        Returns:
+            "low" when the image is likely too blurry or low-contrast for good OCR;
+            "good" otherwise.
+        """
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Blur score: variance of the Laplacian — low value means blurry.
+        blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+        # Contrast: RMS of pixel intensity deviations from mean.
+        mean, std_dev = cv2.meanStdDev(gray)
+        contrast_score = float(std_dev[0][0])
+
+        _BLUR_THRESHOLD = 80.0
+        _CONTRAST_THRESHOLD = 30.0
+
+        if blur_score < _BLUR_THRESHOLD or contrast_score < _CONTRAST_THRESHOLD:
+            logger.debug(
+                "Low image quality detected: blur=%.1f contrast=%.1f",
+                blur_score, contrast_score,
+            )
+            return "low"
+        return "good"
 
     # ── Output ───────────────────────────────────────────────────────────────────
 
@@ -568,6 +610,8 @@ class OcrWorker:
             "total": None,
             "lineItems": [],
             "barcode": None,
+            "barcodeType": None,
+            "imageQuality": None,
             "confidence": {},
             "rawOcrPath": None,
             "errorMessage": error_message,

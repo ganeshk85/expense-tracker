@@ -21,6 +21,7 @@ export function ReceiptUpload({ onUploadComplete }: ReceiptUploadProps) {
   const [progress, setProgress] = useState<'idle' | 'uploading' | 'processing'>('idle')
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
+  const [imageQuality, setImageQuality] = useState<'good' | 'low' | null>(null)
 
   function validateFile(file: File): string | null {
     if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -62,6 +63,7 @@ export function ReceiptUpload({ onUploadComplete }: ReceiptUploadProps) {
       try {
         const status = await apiClient.get<ReceiptStatusResponse>(`/receipts/${receiptId}/status`)
         setRetryCount(status.ocrRetryCount)
+        if (status.imageQuality) setImageQuality(status.imageQuality)
         if (status.thumbnailUrl) {
           setThumbnailUrl(status.thumbnailUrl)
           setProgress('idle')
@@ -158,6 +160,13 @@ export function ReceiptUpload({ onUploadComplete }: ReceiptUploadProps) {
           </div>
         )}
       </div>
+
+      {imageQuality === 'low' && (
+        <div role="alert" className={styles.qualityWarning}>
+          <strong>Low image quality detected.</strong> The receipt may be blurry or have poor contrast.
+          OCR results might be incomplete — please review the extracted data carefully.
+        </div>
+      )}
 
       {error && (
         <p role="alert" className={styles.error}>{error}</p>

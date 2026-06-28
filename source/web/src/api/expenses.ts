@@ -1,16 +1,20 @@
 import { apiClient } from './client'
 import type {
   AssignSharesRequest,
+  AttachmentListResponse,
   CreateExpenseItemRequest,
   CreateExpenseRequest,
   CorrectExpenseRequest,
+  ExpenseAttachmentResponse,
   ExpenseItemResponse,
   ExpenseItemsListResponse,
   ExpenseListResponse,
   ExpenseResponse,
+  SearchExpensesParams,
   SessionResponse,
   UpdateExpenseRequest,
 } from './types'
+
 
 export function getSession(): Promise<SessionResponse> {
   return apiClient.get<SessionResponse>('/auth/session')
@@ -92,3 +96,38 @@ export function attachReceipt(expenseId: string, receiptId: string): Promise<Exp
 export function detachReceipt(expenseId: string, receiptId: string): Promise<void> {
   return apiClient.del<void>(`/expenses/${expenseId}/receipts/${receiptId}`)
 }
+
+// ── File Attachments ──────────────────────────────────────────────────────────
+
+export function getAttachments(expenseId: string): Promise<AttachmentListResponse> {
+  return apiClient.get<AttachmentListResponse>(`/expenses/${expenseId}/attachments`)
+}
+
+export function uploadAttachment(expenseId: string, file: File): Promise<ExpenseAttachmentResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  return apiClient.postForm<ExpenseAttachmentResponse>(`/expenses/${expenseId}/attachments`, form)
+}
+
+export function deleteAttachment(expenseId: string, attachmentId: string): Promise<void> {
+  return apiClient.del<void>(`/expenses/${expenseId}/attachments/${attachmentId}`)
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+export function searchExpenses(params: SearchExpensesParams): Promise<ExpenseListResponse> {
+  const qs = new URLSearchParams()
+  if (params.q) qs.set('q', params.q)
+  if (params.category) qs.set('category', params.category)
+  if (params.merchant) qs.set('merchant', params.merchant)
+  if (params.dateFrom) qs.set('dateFrom', params.dateFrom)
+  if (params.dateTo) qs.set('dateTo', params.dateTo)
+  if (params.minAmount != null) qs.set('minAmount', String(params.minAmount))
+  if (params.maxAmount != null) qs.set('maxAmount', String(params.maxAmount))
+  if (params.tags?.length) params.tags.forEach(t => qs.append('tags', t))
+  if (params.page) qs.set('page', String(params.page))
+  if (params.pageSize) qs.set('pageSize', String(params.pageSize))
+  const suffix = qs.toString() ? `?${qs}` : ''
+  return apiClient.get<ExpenseListResponse>(`/expenses/search${suffix}`)
+}
+

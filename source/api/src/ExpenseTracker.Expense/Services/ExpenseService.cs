@@ -4,7 +4,9 @@ using ExpenseTracker.Audit.Services;
 using ExpenseTracker.Expense.Models;
 using ExpenseTracker.Expense.Repositories;
 using ExpenseTracker.Shared.Exceptions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using ExpenseAttachmentEntity = ExpenseTracker.Ocr.Entities.ExpenseAttachment;
 using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
 using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
 using ExpenseShareEntity = ExpenseTracker.Ocr.Entities.ExpenseShare;
@@ -15,7 +17,8 @@ namespace ExpenseTracker.Expense.Services;
 public sealed class ExpenseService(
     IExpenseManagementRepository repo,
     IAuditService auditService,
-    ILogger<ExpenseService> logger) : IExpenseService
+    ILogger<ExpenseService> logger,
+    Microsoft.Extensions.Options.IOptions<AttachmentStorageOptions> attachmentOptions) : IExpenseService
 {
     private const string AdminRole = "Admin";
     private const string ContributorRole = "Contributor";
@@ -446,13 +449,132 @@ public sealed class ExpenseService(
             throw new ValidationException("Item unit price cannot be negative.");
     }
 
+    // ── File Attachments ─────────────────────────────────────────────────────
+
+    private const long MaxAttachmentBytes = 20 * 1024 * 1024; // 20 MB
+
+    private static readonly HashSet<string> AllowedAttachmentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg", "image/png", "application/pdf", "text/plain",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    };
+
+    public async Task<AttachmentListResponse> GetAttachmentsAsync(
+        Guid expenseId, Guid userId, string userRole, CancellationToken ct = default)
+    {
+        var expense = await repo.FindByIdAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+        EnforceOwnership(expense, userId, userRole);
+
+        var attachments = await repo.GetAttachmentsByExpenseIdAsync(expenseId, ct);
+        return new AttachmentListResponse(attachments.Select(ToAttachmentResponse).ToList().AsReadOnly());
+    }
+
+    public async Task<ExpenseAttachmentResponse> AddAttachmentAsync(
+        Guid expenseId, IFormFile file, Guid userId, string userRole, CancellationToken ct = default)
+    {
+        if (!AllowedAttachmentTypes.Contains(file.ContentType))
+            throw new ValidationException($"Unsupported file type '{file.ContentType}'.");
+
+        if (file.Length > MaxAttachmentBytes)
+            throw new ValidationException("Attachment too large. Maximum size is 20 MB.");
+
+        var expense = await repo.FindByIdAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+        EnforceOwnership(expense, userId, userRole);
+
+        var ext = Path.GetExtension(file.FileName);
+        var storedName = $"{Guid.NewGuid()}{ext}";
+        var basePath = attachmentOptions.Value.BasePath;
+        var dir = Path.Combine(basePath, "attachments", expenseId.ToString());
+        Directory.CreateDirectory(dir);
+        var fullPath = Path.Combine(dir, storedName);
+
+        await using (var stream = File.Create(fullPath))
+            await file.CopyToAsync(stream, ct);
+
+        var relativePath = Path.Combine("attachments", expenseId.ToString(), storedName)
+            .Replace('\\', '/');
+
+        var attachment = new ExpenseAttachmentEntity
+        {
+            ExpenseId = expenseId,
+            UploadedByUserId = userId,
+            FileName = file.FileName,
+            StoragePath = relativePath,
+            ContentType = file.ContentType,
+            FileSizeBytes = file.Length,
+        };
+
+        await repo.AddAttachmentAsync(attachment, ct);
+        await repo.SaveChangesAsync(ct);
+
+        logger.LogInformation("Attachment {AttachmentId} added to expense {ExpenseId} by user {UserId}",
+            attachment.Id, expenseId, userId);
+
+        return ToAttachmentResponse(attachment);
+    }
+
+    public async Task DeleteAttachmentAsync(
+        Guid expenseId, Guid attachmentId, Guid userId, string userRole, CancellationToken ct = default)
+    {
+        var expense = await repo.FindByIdAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+        EnforceOwnership(expense, userId, userRole);
+
+        var attachment = await repo.FindAttachmentByIdAsync(attachmentId, expenseId, ct)
+            ?? throw new NotFoundException("Attachment", attachmentId);
+
+        var fullPath = Path.Combine(attachmentOptions.Value.BasePath, attachment.StoragePath);
+        if (File.Exists(fullPath))
+            File.Delete(fullPath);
+
+        await repo.RemoveAttachmentAsync(attachment, ct);
+        await repo.SaveChangesAsync(ct);
+
+        logger.LogInformation("Attachment {AttachmentId} deleted from expense {ExpenseId} by user {UserId}",
+            attachmentId, expenseId, userId);
+    }
+
+    // ── Search ───────────────────────────────────────────────────────────────
+
+    public async Task<ExpenseListResponse> SearchAsync(
+        SearchExpensesRequest request, Guid userId, string userRole, CancellationToken ct = default)
+    {
+        var filterUserId = userRole == AdminRole ? (Guid?)null : userId;
+        var filterRole = filterUserId.HasValue ? userRole : null;
+
+        if (request.Category is not null && !ExpenseCategory.IsValid(request.Category))
+            throw new ValidationException($"Invalid category '{request.Category}'.");
+
+        var (items, total) = await repo.SearchAsync(
+            filterUserId, filterRole,
+            request.Q, request.Category, request.Merchant,
+            request.DateFrom, request.DateTo,
+            request.MinAmount, request.MaxAmount, request.Tags,
+            request.Page, request.PageSize, ct);
+
+        var responses = new List<ExpenseResponse>(items.Count);
+        foreach (var e in items)
+            responses.Add(await BuildResponseAsync(e, ct));
+
+        return new ExpenseListResponse(responses.AsReadOnly(), total, request.Page, request.PageSize);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
     private async Task<ExpenseResponse> BuildResponseAsync(ExpenseEntity e, CancellationToken ct)
     {
         var receipts = await repo.GetReceiptsByExpenseIdAsync(e.Id, ct);
-        return ToResponse(e, receipts);
+        var attachments = await repo.GetAttachmentsByExpenseIdAsync(e.Id, ct);
+        return ToResponse(e, receipts, attachments);
     }
 
-    private static ExpenseResponse ToResponse(ExpenseEntity e, IReadOnlyList<ReceiptEntity> receipts) => new(
+    private static ExpenseResponse ToResponse(
+        ExpenseEntity e,
+        IReadOnlyList<ReceiptEntity> receipts,
+        IReadOnlyList<ExpenseAttachmentEntity> attachments) => new(
         e.Id,
         e.ReceiptId,
         e.UserId,
@@ -469,6 +591,8 @@ public sealed class ExpenseService(
         e.Source,
         e.OcrStatus,
         e.ConfidenceJson,
+        e.Barcode,
+        e.BarcodeType,
         e.Items.Select(i => new ExpenseItemResponse(i.Id, i.Name, i.Quantity, i.UnitPrice))
                .ToList()
                .AsReadOnly(),
@@ -482,6 +606,15 @@ public sealed class ExpenseService(
             r.Status.ToString()))
             .ToList()
             .AsReadOnly(),
+        attachments.Select(ToAttachmentResponse).ToList().AsReadOnly(),
         e.CreatedAt,
         e.UpdatedAt);
+
+    private static ExpenseAttachmentResponse ToAttachmentResponse(ExpenseAttachmentEntity a) => new(
+        a.Id,
+        a.FileName,
+        a.ContentType,
+        a.FileSizeBytes,
+        $"/expenses/{a.ExpenseId}/attachments/{a.Id}",
+        a.CreatedAt);
 }

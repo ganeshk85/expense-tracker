@@ -24,6 +24,9 @@ public sealed class Expense
 
     public string? Barcode { get; set; }
 
+    /// <summary>pyzbar symbol type: "QRCODE", "CODE128", "EAN13", etc. Null when no code found.</summary>
+    public string? BarcodeType { get; set; }
+
     public string? Category { get; set; }
     public string[] Tags { get; set; } = [];
     public string? Notes { get; set; }
