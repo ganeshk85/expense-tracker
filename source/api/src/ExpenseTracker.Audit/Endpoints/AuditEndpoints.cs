@@ -12,7 +12,7 @@ public static class AuditEndpoints
     {
         var group = app.MapGroup("/audit")
             .WithTags("Audit")
-            .RequireAuthorization("OwnerOnly");
+            .RequireAuthorization("AdminOnly");
 
         group.MapGet("/", HandleGetLogs)
             .WithSummary("Retrieve paginated audit logs (Owner only)");

@@ -39,12 +39,12 @@ public sealed class AuditEndpointsTests : IClassFixture<AuditTestWebAppFactory>
     }
 
     [Fact]
-    public async Task GetAudit_AsAdultMember_Returns403()
+    public async Task GetAudit_AsContributor_Returns403()
     {
-        // Arrange — create a client pre-seeded with an AdultMember session.
+        // Arrange — create a client pre-seeded with a Contributor session.
         var client = _factory.CreateClientWithSession(
             userId: Guid.NewGuid(),
-            role: "AdultMember");
+            role: "Contributor");
 
         var response = await client.GetAsync("/audit");
 
@@ -52,11 +52,11 @@ public sealed class AuditEndpointsTests : IClassFixture<AuditTestWebAppFactory>
     }
 
     [Fact]
-    public async Task GetAudit_AsRestrictedMember_Returns403()
+    public async Task GetAudit_AsReader_Returns403()
     {
         var client = _factory.CreateClientWithSession(
             userId: Guid.NewGuid(),
-            role: "RestrictedMember");
+            role: "Reader");
 
         var response = await client.GetAsync("/audit");
 
@@ -64,11 +64,11 @@ public sealed class AuditEndpointsTests : IClassFixture<AuditTestWebAppFactory>
     }
 
     [Fact]
-    public async Task GetAudit_AsOwner_Returns200WithPagedBody()
+    public async Task GetAudit_AsAdmin_Returns200WithPagedBody()
     {
         var client = _factory.CreateClientWithSession(
             userId: Guid.NewGuid(),
-            role: "Owner");
+            role: "Admin");
 
         var response = await client.GetAsync("/audit?page=1&pageSize=10");
 
@@ -132,7 +132,7 @@ public sealed class AuditTestWebAppFactory : WebApplicationFactory<Program>
         //
         // Since the SessionAuthHandler reads from ctx.Session which is populated by
         // the login flow, we verify the 403 path by hitting the endpoint WITHOUT a
-        // valid Owner session — which the /audit OwnerOnly policy will reject.
+        // valid Owner session — which the /audit AdminOnly policy will reject.
         //
         // The Owner 200 test requires a seeded session. We leave that as a documented
         // limitation: full owner flow requires the login endpoint + session cookie.

@@ -48,3 +48,15 @@ public sealed record AdminMfaToggleRequest(bool Enabled);
 /// Returned by GET /auth/session — current session userId and role.
 /// </summary>
 public sealed record SessionResponse(string UserId, string Role);
+
+/// <summary>
+/// Returned by GET /admin/users — household member summary (Owner-only).
+/// </summary>
+public sealed record UserSummaryResponse(
+    Guid Id,
+    string Username,
+    string Role,
+    bool IsActive,
+    bool MfaEnabled,
+    DateTimeOffset? LastLoginAt,
+    DateTimeOffset CreatedAt);

@@ -13,6 +13,9 @@ internal sealed class UserRepository(AppDbContext db) : IUserRepository
     public Task<User?> FindByIdAsync(Guid id, CancellationToken ct = default)
         => db.Users.FindAsync([id], ct).AsTask();
 
+    public async Task<IReadOnlyList<User>> ListAllAsync(CancellationToken ct = default)
+        => await db.Users.AsNoTracking().OrderBy(u => u.Username).ToListAsync(ct);
+
     public async Task AddAsync(User user, CancellationToken ct = default)
         => await db.Users.AddAsync(user, ct);
 

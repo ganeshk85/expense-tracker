@@ -13,3 +13,5 @@ public sealed record ReceiptStatusResponse(
     string? ThumbnailUrl);
 
 public sealed record UpdateThumbnailRequest(string ThumbnailPath);
+
+public sealed record ThumbnailFileResult(string FilePath, string ContentType);

@@ -1,0 +1,73 @@
+.sidebar {
+  width: 224px;
+  min-height: 100vh;
+  background: #ffffff;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 1.5rem 0 2rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.brandName {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.brandSub {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: #9ca3af;
+  display: block;
+}
+
+.navList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0 0.75rem;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5625rem 0.75rem;
+  border-radius: 0.375rem;
+  color: #6b7280;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.navLink:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.navLinkActive {
+  background-color: #eef2ff;
+  color: #4f46e5;
+}
+
+.navLinkActive:hover {
+  background-color: #eef2ff;
+  color: #4f46e5;
+}
+
+.navIcon {
+  flex-shrink: 0;
+  color: currentColor;
+}

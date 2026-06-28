@@ -84,6 +84,27 @@ public sealed class ReceiptService(
         return new ReceiptStatusResponse(receipt.Id, receipt.Status.ToString(), receipt.OcrRetryCount, thumbnailUrl);
     }
 
+    public async Task<ThumbnailFileResult> GetThumbnailAsync(
+        Guid receiptId, Guid requestingUserId, CancellationToken ct = default)
+    {
+        var receipt = await receipts.FindByIdAsync(receiptId, ct)
+            ?? throw new NotFoundException("Receipt", receiptId);
+
+        if (receipt.UploadedByUserId != requestingUserId)
+            throw new ForbiddenException("You do not have access to this receipt.");
+
+        if (receipt.ThumbnailPath is null)
+            throw new NotFoundException("Thumbnail", receiptId);
+
+        if (!File.Exists(receipt.ThumbnailPath))
+            throw new NotFoundException("Thumbnail file", receiptId);
+
+        var ext = Path.GetExtension(receipt.ThumbnailPath).ToLowerInvariant();
+        var contentType = ext == ".png" ? "image/png" : "image/jpeg";
+
+        return new ThumbnailFileResult(receipt.ThumbnailPath, contentType);
+    }
+
     public async Task UpdateThumbnailAsync(Guid receiptId, UpdateThumbnailRequest request, CancellationToken ct = default)
     {
         var receipt = await receipts.FindByIdAsync(receiptId, ct)

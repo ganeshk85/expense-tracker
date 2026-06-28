@@ -20,7 +20,7 @@ public sealed class AuthServiceMfaTests
     {
         Username = "testuser",
         PasswordHash = "fakehash",
-        Role = UserRole.AdultMember,
+        Role = UserRole.Contributor,
         MfaEnabled = mfaEnabled,
         TotpSecretEncrypted = totpSecretEncrypted
     };
@@ -125,7 +125,7 @@ public sealed class AuthServiceMfaTests
         var loginCode = setupTotp.ComputeTotp();
         var role = await service.VerifyMfaLoginAsync(user.Id, new MfaLoginRequest(loginCode));
 
-        role.Should().Be("AdultMember");
+        role.Should().Be("Contributor");
     }
 
     [Fact]

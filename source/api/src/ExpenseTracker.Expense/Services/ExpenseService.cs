@@ -15,7 +15,7 @@ public sealed class ExpenseService(
     IAuditService auditService,
     ILogger<ExpenseService> logger) : IExpenseService
 {
-    private const string OwnerRole = "Owner";
+    private const string AdminRole = "Admin";
 
     public async Task<ExpenseResponse> CreateManualAsync(
         CreateExpenseRequest request, Guid userId, CancellationToken ct = default)
@@ -54,7 +54,7 @@ public sealed class ExpenseService(
         Guid userId, string userRole, bool allHousehold,
         int page, int pageSize, CancellationToken ct = default)
     {
-        Guid? filterUserId = (allHousehold && userRole == OwnerRole) ? null : userId;
+        Guid? filterUserId = (allHousehold && userRole == AdminRole) ? null : userId;
 
         var (items, total) = await repo.ListAsync(filterUserId, page, pageSize, ct);
         return new ExpenseListResponse(
@@ -85,7 +85,7 @@ public sealed class ExpenseService(
         if (!ExpenseCategory.IsValid(request.Category))
             throw new ValidationException($"Invalid category '{request.Category}'.");
 
-        var expense = await repo.FindByIdAsync(id, ct)
+        var expense = await repo.FindByIdTrackedAsync(id, ct)
             ?? throw new NotFoundException("Expense", id);
 
         EnforceOwnership(expense, userId, userRole);
@@ -149,7 +149,7 @@ public sealed class ExpenseService(
         if (!ExpenseCategory.IsValid(request.Category))
             throw new ValidationException($"Invalid category '{request.Category}'.");
 
-        var expense = await repo.FindByIdAsync(id, ct)
+        var expense = await repo.FindByIdTrackedAsync(id, ct)
             ?? throw new NotFoundException("Expense", id);
 
         EnforceOwnership(expense, userId, userRole);
@@ -200,7 +200,7 @@ public sealed class ExpenseService(
 
     private static void EnforceOwnership(ExpenseEntity expense, Guid userId, string userRole)
     {
-        if (userRole != OwnerRole && expense.UserId != userId)
+        if (userRole != AdminRole && expense.UserId != userId)
             throw new ForbiddenException("You do not have access to this expense.");
     }
 

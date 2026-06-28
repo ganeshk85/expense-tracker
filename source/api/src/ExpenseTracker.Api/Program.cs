@@ -63,14 +63,14 @@ builder.Services.AddAuthentication(SessionAuthHandler.SchemeName)
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("OwnerOnly", policy =>
+    options.AddPolicy("AdminOnly", policy =>
         policy.RequireAssertion(ctx =>
-            ctx.User.HasClaim("Role", "Owner")));
+            ctx.User.HasClaim("Role", "Admin")));
 
-    options.AddPolicy("AdultOrOwner", policy =>
+    options.AddPolicy("ContributorOrAdmin", policy =>
         policy.RequireAssertion(ctx =>
-            ctx.User.HasClaim("Role", "Owner") ||
-            ctx.User.HasClaim("Role", "AdultMember")));
+            ctx.User.HasClaim("Role", "Admin") ||
+            ctx.User.HasClaim("Role", "Contributor")));
 
     // Only the OCR worker (presenting X-Internal-Key) may call internal endpoints.
     options.AddPolicy("InternalOnly", policy =>

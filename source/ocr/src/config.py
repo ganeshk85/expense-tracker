@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     storage_ocr_json_path: str = "/storage/ocr-json"
     thumbnail_max_width: int = 300
     thumbnail_max_height: int = 400
+    # Full path to the Tesseract executable (required on Windows where it is not on PATH)
+    tesseract_cmd: str = "tesseract"
     # OCR pipeline target in seconds (NFR: < 8s)
     ocr_timeout_seconds: int = 8
 

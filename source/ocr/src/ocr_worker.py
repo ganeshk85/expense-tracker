@@ -88,6 +88,7 @@ class OcrWorker:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+        pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
 
     async def run(self) -> None:
         """Main loop — reads from the Redis stream and processes jobs."""

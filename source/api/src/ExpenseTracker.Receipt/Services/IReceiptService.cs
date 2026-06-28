@@ -9,4 +9,5 @@ public interface IReceiptService
     /// <param name="requestingUserId">The user making the request — used to enforce ownership (403 if mismatch).</param>
     Task<ReceiptStatusResponse> GetStatusAsync(Guid receiptId, Guid requestingUserId, CancellationToken ct = default);
     Task UpdateThumbnailAsync(Guid receiptId, UpdateThumbnailRequest request, CancellationToken ct = default);
+    Task<ThumbnailFileResult> GetThumbnailAsync(Guid receiptId, Guid requestingUserId, CancellationToken ct = default);
 }

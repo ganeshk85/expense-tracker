@@ -28,7 +28,7 @@ public static class AuthEndpoints
             .WithMetadata(new AuditedAttribute(action: "LOGOUT", resourceType: "USER"));
 
         group.MapPost("/invite", HandleInvite)
-            .RequireAuthorization("OwnerOnly")
+            .RequireAuthorization("AdminOnly")
             .WithSummary("Create an invite link for a new household member")
             .WithMetadata(new AuditedAttribute(action: "USER_INVITE", resourceType: "USER"));
 
@@ -54,8 +54,12 @@ public static class AuthEndpoints
 
         var adminGroup = app.MapGroup("/admin").WithTags("Admin");
 
+        adminGroup.MapGet("/users", HandleListUsers)
+            .RequireAuthorization("AdminOnly")
+            .WithSummary("Owner-only: list all household members");
+
         adminGroup.MapMethods("/users/{id:guid}/mfa", ["PATCH"], HandleAdminMfaToggle)
-            .RequireAuthorization("OwnerOnly")
+            .RequireAuthorization("AdminOnly")
             .WithSummary("Owner-only: enable or disable MFA for a household member")
             .WithMetadata(new AuditedAttribute(action: "MFA_CHANGE", resourceType: "USER"));
 
@@ -171,6 +175,14 @@ public static class AuthEndpoints
         return Results.Ok(new SessionResponse(userId, role));
     }
 
+    private static async Task<IResult> HandleListUsers(
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        var result = await authService.ListUsersAsync(ct);
+        return Results.Ok(result);
+    }
+
     private static async Task<IResult> HandleAdminMfaToggle(
         Guid id,
         AdminMfaToggleRequest request,
@@ -178,7 +190,7 @@ public static class AuthEndpoints
         HttpContext ctx,
         CancellationToken ct)
     {
-        // Authorization: OwnerOnly policy is enforced by RequireAuthorization("OwnerOnly").
+        // Authorization: AdminOnly policy is enforced by RequireAuthorization("AdminOnly").
         // The session handler returns 403 for non-owner roles before this handler is reached.
         await authService.AdminToggleMfaAsync(id, request.Enabled, ct);
         return Results.Ok(new { message = $"MFA {(request.Enabled ? "enabled" : "disabled")} for user {id}." });

@@ -41,6 +41,11 @@ internal sealed class ExpenseRepository(AppDbContext db)
               .AsNoTracking()
               .FirstOrDefaultAsync(e => e.Id == id, ct);
 
+    public Task<ExpenseEntity?> FindByIdTrackedAsync(Guid id, CancellationToken ct = default)
+        => db.Expenses
+              .Include(e => e.Items)
+              .FirstOrDefaultAsync(e => e.Id == id, ct);
+
     public async Task<(IReadOnlyList<ExpenseEntity> Items, int Total)> ListAsync(
         Guid? userId, int page, int pageSize, CancellationToken ct = default)
     {

@@ -1,7 +1,7 @@
 # Sprint Plan — Expense Tracker
 **Project:** Family Expense Intelligence Platform
 **Role:** Product Owner
-**Date:** 2026-05-30
+**Date:** 2026-05-30 (updated 2026-06-27)
 **Source:** documents/user-stories.md
 
 ---
@@ -11,7 +11,7 @@
 | Engineer | Role | Domain |
 |----------|------|--------|
 | **Senior Backend Engineer (BE)** | Full-time | .NET 10 API, PostgreSQL, Redis, auth middleware |
-| **Senior Frontend Engineer (FE)** | Full-time | React/Next.js, TypeScript, Tailwind CSS, React Query |
+| **Senior Frontend Engineer (FE)** | Full-time | React/Next.js, TypeScript, CSS Modules, React Query |
 | **Senior OCR Engineer (OCR)** | Full-time | Python FastAPI, Tesseract, OpenCV, ZXing, file workers |
 
 **Sprint cadence:** 2-week sprints
@@ -81,12 +81,12 @@ Each story is scored across 4 dimensions (1–5 scale):
 
 ---
 
-## Sprint 1
-**Dates:** 2026-06-02 → 2026-06-13 (2 weeks)
+## Sprint 1 ✅ COMPLETED
+**Dates:** 2026-06-02 → 2026-06-13
 **Sprint Goal:** Any household member can register, log in with enforced role permissions, and upload receipts to the system.
-**Committed:** 19 points | **Stretch:** 3 points
+**Committed:** 19 points | **Delivered:** 19 points
 
-### Committed Stories
+### Delivered Stories
 
 | Story ID | Title | Points | Engineers |
 |----------|-------|--------|-----------|
@@ -99,103 +99,30 @@ Each story is scored across 4 dimensions (1–5 scale):
 
 ### Stretch Story
 
-| Story ID | Title | Points | Condition |
-|----------|-------|--------|-----------|
-| US-OCR-05 | OCR Retry on Failure | 3 | Pick up if REC-05 lands by Day 8 |
+| Story ID | Title | Points | Outcome |
+|----------|-------|--------|---------|
+| US-OCR-05 | OCR Retry on Failure | 3 | Not picked up — moved to Sprint 3 |
+
+### Sprint 1 Definition of Done — Results
+
+- [x] Login works end-to-end: valid credentials → session cookie → dashboard redirect
+- [x] Unauthenticated requests to any protected route return 401
+- [x] Restricted Member cannot access Adult Member or Owner routes (403 verified in tests)
+- [x] Owner can invite a member; invite link expires after 48h
+- [x] New member can activate account via invite link and log in
+- [x] JPG, PNG, HEIC, PDF files upload successfully; unsupported types return clear error
+- [x] Thumbnail appears in UI within 2 seconds of successful upload
+- [x] All new API endpoints have integration tests
+- [x] No `console.log` or debug output in committed code
 
 ---
 
-### Engineer Task Assignments — Sprint 1
-
-#### Senior Backend Engineer (BE)
-
-**US-AUTH-01 — Login API**
-- `POST /auth/login` — validate credentials, compare Argon2 hash, return HTTP-only session cookie
-- Account lockout: reject after 5 consecutive failures, store lock timestamp in PostgreSQL
-- Session config: 30-minute idle timeout, secure + httpOnly flags, SameSite=Strict
-
-**US-AUTH-03 — Role-Based Access Control**
-- Add role claim (Owner | AdultMember | RestrictedMember) to session/JWT
-- ASP.NET policy middleware: enforce per-controller and per-endpoint
-- All unprotected routes → 401 Unauthorized
-- Role violation → 403 Forbidden with JSON body `{ "error": "Access denied" }`
-
-**US-AUTH-04 — Invitation API**
-- `POST /auth/invite` — generate a signed invite token (48h expiry), store in DB
-- `POST /auth/activate` — validate token, set password (Argon2 hash), activate account
-- Token expiry: auto-expire at 48h, return 410 Gone on expired token use
-
-**US-REC-01 — Upload API**
-- `POST /receipts/upload` — accept multipart form, validate MIME type (JPG/PNG/HEIC/PDF)
-- Write original file to `/storage/receipts/{userId}/{uuid}.{ext}` — no lossy compression
-- Return receipt record with `id`, `status: "uploaded"`, `thumbnailUrl: null` (set after OCR worker)
-- Reject unsupported types with 415 + message listing accepted formats
-
----
-
-#### Senior Frontend Engineer (FE)
-
-**US-AUTH-01 — Login UI**
-- `/login` page: username + password fields, submit button
-- Client-side validation: both fields required before submit
-- On success: redirect to `/dashboard`
-- On failure: inline error "Invalid credentials" (do not reveal which field)
-- On lockout: show "Account temporarily locked. Try again later."
-
-**US-AUTH-04 — Invitation & Account Setup UI**
-- `/invite/[token]` page: set-password form (password + confirm), submit
-- On success: auto-login and redirect to `/dashboard` with welcome banner
-- On expired token: show "This invite link has expired. Request a new one."
-- Owner settings page: "Invite Member" form (name + role selector)
-
-**US-REC-01 — Receipt Upload UI**
-- Upload zone component: drag-and-drop area + "Select File" button
-- Progress bar during upload (poll or streaming)
-- On success: show thumbnail preview (placeholder spinner until thumbnail is ready)
-- On invalid file type: inline error "Accepted formats: JPG, PNG, HEIC, PDF"
-- On upload >10 MB: inline error "File too large. Maximum size is 10 MB."
-
----
-
-#### Senior OCR Engineer (OCR)
-
-**US-REC-05 — Thumbnail Worker**
-- Listen on Redis queue `receipt.uploaded` events
-- For each event: load file from `/storage/receipts/`, generate 300×400px thumbnail
-- HEIC input → convert to JPEG using Pillow/imageio before thumbnailing
-- PDF input → render first page to image (use pdf2image/poppler), then thumbnail
-- Write thumbnail to `/storage/thumbnails/{receiptId}.jpg`
-- Update receipt record via internal API: `PATCH /internal/receipts/{id}` with `thumbnailPath`
-- Target: thumbnail ready within 2 seconds of upload
-
-**[Stretch] US-OCR-05 — OCR Retry Logic**
-- Wrap OCR job execution in a retry decorator: max 3 attempts, backoff 10s / 30s / 90s
-- On each retry: update receipt status to `"processing (retry X of 3)"`
-- On final failure: set status to `"ocr_failed"`, emit `receipt.ocr_failed` event for UI poll
-- Log each attempt with timestamp, error type, and attempt number
-
----
-
-### Sprint 1 Definition of Done
-
-- [ ] Login works end-to-end: valid credentials → session cookie → dashboard redirect
-- [ ] Unauthenticated requests to any protected route return 401
-- [ ] Restricted Member cannot access Adult Member or Owner routes (403 verified in tests)
-- [ ] Owner can invite a member; invite link expires after 48h
-- [ ] New member can activate account via invite link and log in
-- [ ] JPG, PNG, HEIC, PDF files upload successfully; unsupported types return clear error
-- [ ] Thumbnail appears in UI within 2 seconds of successful upload
-- [ ] All new API endpoints have integration tests
-- [ ] No `console.log` or debug output in committed code
-
----
-
-## Sprint 2
-**Dates:** 2026-06-16 → 2026-06-27 (2 weeks)
+## Sprint 2 ✅ COMPLETED
+**Dates:** 2026-06-16 → 2026-06-27
 **Sprint Goal:** Security hardening is complete (MFA + audit logging); the OCR extraction pipeline is live end-to-end so uploaded receipts auto-populate expense fields.
-**Committed:** 18 points | **Stretch:** 5 points
+**Committed:** 18 points | **Delivered:** 18 points
 
-### Committed Stories
+### Delivered Stories
 
 | Story ID | Title | Points | Engineers |
 |----------|-------|--------|-----------|
@@ -204,105 +131,525 @@ Each story is scored across 4 dimensions (1–5 scale):
 | US-OCR-01 | Automatic Receipt Data Extraction | 8 | OCR + BE |
 | **Total** | | **18** | |
 
+> **Note on US-OCR-01 (8 pts):** Split internally — BE owns queue wiring + DB write (3 pts effort), OCR owns the extraction worker (5 pts effort). Both shipped together as one story.
+
 ### Stretch Story
 
-| Story ID | Title | Points | Condition |
-|----------|-------|--------|-----------|
-| US-REC-02 | Upload Receipt via Mobile Camera | 5 | FE picks up if MFA UI is complete by Day 7 |
+| Story ID | Title | Points | Outcome |
+|----------|-------|--------|---------|
+| US-REC-02 | Upload Receipt via Mobile Camera | 5 | **Not delivered** — FE capacity consumed by MFA UI. Moves to Sprint 4. |
 
-> **Note on US-OCR-01 (8 pts):** Split internally — BE owns queue wiring + DB write (3 pts effort), OCR owns the extraction worker (5 pts effort). Both ship together as one story.
+### Sprint 2 Definition of Done — Results
+
+- [x] MFA setup generates a valid TOTP QR code that works with Google Authenticator / Authy
+- [x] Login with MFA-enabled account requires valid OTP before dashboard access
+- [x] Invalid OTP returns error; valid OTP grants session
+- [x] Every POST/PUT/PATCH/DELETE operation creates an audit log entry with before/after JSON
+- [x] `GET /audit` returns 403 for Adult Member and Restricted Member roles
+- [x] Audit log entries cannot be edited or deleted via any API endpoint
+- [x] Uploading a receipt triggers OCR; extracted fields appear in expense form within 8 seconds
+- [x] Raw OCR JSON is stored at `/storage/ocr-json/` and persists
+- [x] OCR partial failures degrade gracefully: form shows empty fields, not errors
+- [x] All new API endpoints have integration tests; OCR worker has accuracy benchmark tests
 
 ---
 
-### Engineer Task Assignments — Sprint 2
+## Sprint 3 ✅ COMPLETED
+**Dates:** 2026-06-16 → 2026-06-27
+**Sprint Goal:** OCR results are fully reviewable and correctable; expense records can be created manually, categorized, and edited — completing the core expense lifecycle.
+**Committed:** 20 points | **Delivered:** 20 points
+
+### Delivered Stories
+
+| Story ID | Title | Points | Engineers |
+|----------|-------|--------|-----------|
+| US-OCR-03 | Manual Correction of Extracted Data | 5 | BE + FE |
+| US-EXP-01 | Create Expense Manually | 3 | BE + FE |
+| US-EXP-05 | View and Edit Expense History | 3 | BE + FE |
+| US-EXP-02 | Categorize and Tag an Expense | 3 | BE + FE |
+| US-OCR-02 | Confidence Scoring Display | 3 | BE + FE + OCR |
+| US-OCR-05 | OCR Retry on Failure | 3 | OCR |
+| **Total** | | **20** | |
+
+### Key Artifacts Delivered
+
+| Layer | File / Endpoint |
+|-------|----------------|
+| BE | `PATCH /expenses/{id}/corrections`, `POST /expenses`, `GET/PUT /expenses`, `GET/PUT /expenses/{id}` |
+| BE | Migration: `20260627000001_AddExpenseCategoryTagsNotesConfidence.cs` |
+| BE | `source/api/src/ExpenseTracker.Expense/` module (Endpoints, Services, Repositories, Models) |
+| OCR | `source/ocr/src/ocr_worker.py` — retry logic with 10s/30s backoff; `OcrRetryCount` on Receipt |
+| FE | `source/web/src/app/expenses/page.tsx` — expense list |
+| FE | `source/web/src/app/expenses/new/page.tsx` — manual create form |
+| FE | `source/web/src/app/expenses/[id]/page.tsx` — detail/edit + OCR corrections |
+| FE | `source/web/src/components/ReceiptStatusBadge.tsx` — retry count badge |
+| FE | `source/web/src/api/expenses.ts` — typed API client |
+
+### Sprint 3 Definition of Done — Results
+
+- [x] OCR corrections endpoint persists corrected values and logs original OCR value
+- [x] Manual expense creation (Source=Manual) works end-to-end
+- [x] Expense list shows most recent first; edits reflect immediately without page refresh
+- [x] Category dropdown and tag input wired to expense entity
+- [x] Confidence indicators (High/Medium/Low) displayed in amber for fields < 70%
+- [x] OCR retry runs up to 3 times with exponential backoff; UI shows retry count
+
+---
+
+## Post-Sprint 3 Backfill — Navigation & Receipt Upload UI ✅ COMPLETED
+**Date:** 2026-06-27
+**Trigger:** Sprint 3 review identified that the US-REC-01 frontend deliverable was never built — the backend upload endpoint and API types existed, but no receipt upload page or application navigation had been created. Pages built in Sprints 1–3 were unreachable without typing URLs directly.
+
+**Not a new story — this is correction of an incomplete Sprint 1 FE delivery.**
+
+### Work Done
+
+| Layer | File | Description |
+|-------|------|-------------|
+| FE | `source/web/src/components/NavSidebar.tsx` | Sidebar with SVG icons; active state via `usePathname` |
+| FE | `source/web/src/components/NavSidebar.module.css` | Sidebar styles |
+| FE | `source/web/src/components/AppShell.tsx` | Client shell; hides sidebar on `/login` and `/invite/*` |
+| FE | `source/web/src/components/AppShell.module.css` | Shell layout (flex row) |
+| FE | `source/web/src/app/layout.tsx` | Updated to wrap children with `AppShell` |
+| FE | `source/web/src/app/receipts/upload/page.tsx` | Full upload page: drag-drop, file picker, upload, OCR polling, all states |
+| FE | `source/web/src/app/receipts/upload/upload.module.css` | Upload page styles |
+| FE | `source/web/src/api/receipts.ts` | `uploadReceipt()` and `getReceiptStatus()` API client functions |
+
+### Upload Page States
+1. **Idle** — drag-drop zone with file picker; client-side MIME + size validation
+2. **Uploading** — spinner while `POST /receipts/upload` is in flight
+3. **Processing** — polls `GET /receipts/{id}/status` every 2 seconds; shows thumbnail when available; shows retry badge if OCR is retrying
+4. **Complete** — success card with thumbnail + "View Expenses" and "Upload Another" actions
+5. **Failed** — error card with "Add Manually" (→ `/expenses/new`) and "Try Again" actions
+
+### Root Cause Note
+The Sprint 1 DoD checklist was marked complete based on backend delivery. The FE receipt upload page was assigned but not implemented. Going forward: DoD verification must include a browser smoke test before marking a story done.
+
+---
+
+## Sprint 4 — Phase 1: Shared Expenses + Receipt Flexibility
+**Dates:** 2026-06-30 → 2026-07-11
+**Sprint Goal:** Members can share and split expenses; receipts can be captured via mobile camera and attached in multiples; OCR line items are fully editable.
+**Committed:** 18 points | **Stretch:** 0 points
+
+### Committed Stories
+
+| Story ID | Title | Points | Engineers | Rationale |
+|----------|-------|--------|-----------|-----------|
+| US-EXP-04 | Mark an Expense as Shared | 5 | BE + FE | Highest priority — prerequisite for Phase 2 shared budgets |
+| US-REC-02 | Upload Receipt via Mobile Camera | 5 | FE + OCR | High-impact UX; most users are on mobile; missed Sprint 2 stretch |
+| US-REC-03 | Attach Multiple Receipts to One Expense | 3 | BE + FE | Completes receipt capture flexibility |
+| US-EXP-06 | Item-Level Expense Breakdown | 5 | BE + FE | OCR line items from Sprint 2 are ready; unblocked by EXP-05 |
+| **Total** | | **18** | | |
+
+### Engineer Task Assignments — Sprint 4
 
 #### Senior Backend Engineer (BE)
 
-**US-AUTH-02 — MFA API**
-- `POST /auth/mfa/setup` — generate TOTP secret (use `OtpNet` or equivalent), return base32 secret + otpauth URI for QR display
-- `POST /auth/mfa/verify` — validate OTP against secret with ±1 window tolerance
-- Add `mfa_enabled` flag + `totp_secret` (encrypted) to `users` table
-- Owner can toggle MFA for any user: `PATCH /admin/users/{id}/mfa`
+**US-EXP-04 — Shared Expense API**
+- Add `is_shared` flag and `expense_shares` join table: `expense_id`, `user_id`, `amount`, `percentage`
+- `POST /expenses/{id}/shares` — assign members and split amounts/percentages; validate shares sum to total
+- `GET /expenses` — for Adult Member: return own expenses + shared expenses they are part of
+- `GET /expenses` — for Restricted Member: return only assigned expenses (no shared expenses unless explicitly included)
+- `GET /expenses` — for Owner: support `?view=household` to see all household expenses
+- Share recalculation: `PUT /expenses/{id}` — if total changes and shares exist, return 409 with `shares_out_of_sync: true` so FE can prompt user
+- Audit log: expense share creation/modification must generate audit entries
 
-**US-AUTH-05 — Audit Logging**
-- Create `audit_logs` table: `id`, `user_id`, `action`, `resource_type`, `resource_id`, `before_json`, `after_json`, `ip_address`, `created_at`
-- Middleware: intercept all POST/PUT/PATCH/DELETE; capture before/after state; append log entry
-- Append-only: no UPDATE or DELETE on audit_logs — enforced at DB level (row-level policy)
-- `GET /audit` — Owner only (403 for others); supports filters: `?userId=`, `?from=`, `?to=`, `?action=`
+**US-REC-03 — Multiple Receipts API**
+- Extend `receipts` table: add `expense_id` FK (nullable — receipt can be unlinked or linked to an expense)
+- `POST /expenses/{id}/receipts` — attach an already-uploaded receipt to an expense
+- `DELETE /expenses/{id}/receipts/{receiptId}` — detach a receipt; do not delete the underlying file
+- `GET /expenses/{id}` — include `receipts[]` array with `id`, `thumbnailUrl`, `status`
+- When multiple receipts are attached: each triggers its own OCR job; results are merged (fields from highest-confidence receipt win where conflicts exist)
 
-**US-OCR-01 — BE Queue Wiring**
-- On receipt upload: enqueue job to Redis stream `ocr.jobs` with `{ receiptId, filePath, userId }`
-- Poll Redis stream `ocr.results` for completion; on result received: upsert `expenses` record with extracted fields and upsert `expense_items` for line items
-- Update receipt status: `"processing"` → `"complete"` or `"ocr_failed"`
-- Expose `GET /receipts/{id}/status` for FE polling
+**US-EXP-06 — Item-Level Breakdown API**
+- `expense_items` table already exists (created Sprint 2 for OCR); expose full CRUD
+- `GET /expenses/{id}/items` — return all line items for an expense
+- `POST /expenses/{id}/items` — add a manual line item (`name`, `quantity`, `unit_price`)
+- `PUT /expenses/{id}/items/{itemId}` — update item
+- `DELETE /expenses/{id}/items/{itemId}` — remove item; recalculate and return updated total
+- Validation: if line items exist and sum ≠ expense total, return `items_total_mismatch: true` in GET response (do not block save)
 
 ---
 
 #### Senior Frontend Engineer (FE)
 
-**US-AUTH-02 — MFA UI**
-- MFA setup page `/settings/mfa`: display QR code (use `qrcode` library with otpauth URI), show backup secret as text
-- Inject OTP entry step into login flow: after password validation, if `mfa_required: true` in response, route to `/login/mfa` with 6-digit input
-- Owner settings: toggle MFA on/off per member with confirmation dialog
+**US-EXP-04 — Shared Expense UI**
+- Add "Shared Expense" toggle on expense edit form
+- When toggled on: show member selector (multi-select from household members) and split input (amount or percentage per member)
+- Auto-fill equal split when members are selected; allow manual override
+- Validation: splits must sum to total before form can be saved; show running sum indicator
+- Shared expense card in list view: show shared badge and member avatars/initials
+- Owner expense list: "All Household" toggle button in list header
 
-**[Stretch] US-REC-02 — Mobile Camera Upload UI**
-- Add "Take Photo" button on upload page alongside existing drag-drop zone
-- Use `<input type="file" accept="image/*" capture="environment">` for rear camera
+**US-REC-02 — Mobile Camera Upload UI**
+- Add "Take Photo" button alongside existing drag-drop zone on upload page
+- Use `<input type="file" accept="image/*" capture="environment">` for rear camera activation
 - Strip EXIF on the client before upload using `piexifjs` (remove GPS + device info)
 - On poor quality (flagged by BE response): show amber banner "Image may be hard to read. Retake?"
+- "Choose from Gallery" option: `<input type="file" accept="image/*">` (no capture attribute)
+- Upload flow identical to desktop after image is selected
+
+**US-REC-03 — Multiple Receipts UI**
+- Expense detail page: show receipt gallery (horizontal scroll, thumbnail cards)
+- "Attach another receipt" button opens upload zone inline (no page navigation)
+- Each thumbnail card: remove button (x) with confirmation dialog
+- Gallery shows max 5 thumbnails in row; overflow → "View all (N)" link
+
+**US-EXP-06 — Item-Level Breakdown UI**
+- Expand existing expense detail page with collapsible "Line Items" section
+- Editable table: item name, quantity, unit price; auto-computed row total
+- "Add item" row at the bottom; inline delete per row
+- Running total footer: show items sum; highlight in amber if sum ≠ expense total
+- Show warning message (not block) if totals mismatch on save
 
 ---
 
 #### Senior OCR Engineer (OCR)
 
-**US-OCR-01 — Extraction Worker**
-- Redis stream consumer: read from `ocr.jobs`
-- **Preprocessing** (OpenCV): deskew, denoise, adaptive threshold, resize to 300 DPI
-- **Extraction** (Tesseract): run with `--oem 1 --psm 6`; parse output into structured fields:
-  - Merchant name, address, date (parse to ISO 8601), time, subtotal, tax amount, total
-  - Line items: item name, quantity, unit price (regex + positional heuristics)
-- **Barcode** (ZXing): scan full image for 1D/2D codes; store decoded value if found
-- **Confidence scoring**: per-field confidence (0–100); flag fields < 70 as low confidence
-- **Output**: write raw OCR JSON to `/storage/ocr-json/{receiptId}.json`; push structured result to `ocr.results` Redis stream
-- Target: full pipeline completes within 8 seconds
+**US-REC-02 — EXIF Handling Verification**
+- Verify Python worker does not re-embed GPS or device metadata when writing thumbnails
+- Add `piexif.remove()` call on any HEIC→JPEG conversion path to strip EXIF at server side as backup
+- Add test: upload image with GPS EXIF, assert stored file and thumbnail have no GPS tags
+
+**US-REC-03 — Multi-Receipt OCR Merge**
+- When multiple receipts are attached to one expense: process each in parallel (separate Redis jobs)
+- Merge strategy: for each field, pick the value from the receipt with the highest per-field confidence score
+- Log merge decisions to OCR JSON output: `{ "field": "total", "source_receipt_id": "...", "confidence": 94 }`
 
 ---
 
-### Sprint 2 Definition of Done
+### Sprint 4 Definition of Done
 
-- [ ] MFA setup generates a valid TOTP QR code that works with Google Authenticator / Authy
-- [ ] Login with MFA-enabled account requires valid OTP before dashboard access
-- [ ] Invalid OTP returns error; valid OTP grants session
-- [ ] Every POST/PUT/PATCH/DELETE operation creates an audit log entry with before/after JSON
-- [ ] `GET /audit` returns 403 for Adult Member and Restricted Member roles
-- [ ] Audit log entries cannot be edited or deleted via any API endpoint
-- [ ] Uploading a receipt triggers OCR; extracted fields appear in expense form within 8 seconds
-- [ ] Raw OCR JSON is stored at `/storage/ocr-json/` and persists
-- [ ] OCR partial failures degrade gracefully: form shows empty fields, not errors
-- [ ] All new API endpoints have integration tests; OCR worker has accuracy benchmark tests
+- [ ] Shared expense toggle saves split data; all named members see their share in their expense list
+- [ ] Restricted Member cannot see shared expenses unless explicitly included by Owner
+- [ ] Owner "All Household" view shows every expense across all members
+- [ ] Expense total change with active shares returns `shares_out_of_sync` signal; UI prompts re-split
+- [ ] Mobile camera capture activates rear camera; EXIF GPS data is stripped before upload
+- [ ] Multiple receipts attach to one expense; removing one does not affect others
+- [ ] Line items table is editable; deleting an item recalculates expense total
+- [ ] Line item sum ≠ total shows amber warning; save is not blocked
+- [ ] All new endpoints have integration tests
+- [ ] No `console.log` or debug output in committed code
 
 ---
 
-## Upcoming Backlog (Sprint 3 candidates)
+## Sprint 5 — Phase 1 Completion + Phase 2 Kickoff
+**Dates:** 2026-07-14 → 2026-07-25
+**Sprint Goal:** Phase 1 is fully delivered; the search foundation and first budget entity are live to unblock Phase 2.
+**Committed:** 20 points
 
-These Tier 2 and Tier 3 stories are next in priority for sprint selection:
+### Committed Stories
 
-| Story ID | Title | Points | Priority |
-|----------|-------|--------|----------|
-| US-OCR-03 | Manual Correction of Extracted Data | 5 | Critical |
-| US-EXP-01 | Create Expense Manually | 3 | Critical |
-| US-EXP-05 | View and Edit Expense History | 3 | High |
-| US-EXP-02 | Categorize and Tag an Expense | 3 | High |
-| US-OCR-02 | Confidence Scoring Display | 3 | High |
-| US-OCR-05 | OCR Retry on Failure | 3 | Medium (if not completed as Sprint 1 stretch) |
+| Story ID | Title | Points | Engineers | Phase |
+|----------|-------|--------|-----------|-------|
+| US-OCR-04 | Barcode & QR Code Parsing | 5 | OCR + BE | 1 |
+| US-REC-04 | Image Quality Detection | 3 | OCR + FE | 1 |
+| US-REC-06 | Restricted Member Receipt Upload | 2 | BE + FE | 1 |
+| US-EXP-03 | Add Notes and Attachments | 2 | BE + FE | 1 |
+| US-BUD-01 | Set Monthly Category Budget | 3 | BE + FE | 2 — pairs with lighter Phase 1 tail |
+| US-SRCH-01 | Multi-Field Expense Search | 5 | BE | 2 — search infra is foundational for dashboard |
+| **Total** | | **20** | | |
+
+> **Phase 1 closes at end of Sprint 5.** All 84 Phase 1 points delivered across 5 sprints.
+
+### Engineer Task Assignments — Sprint 5
+
+#### Senior Backend Engineer (BE)
+
+**US-OCR-04 — Barcode/QR Storage**
+- `receipts` table already has `barcode_value` column (added Sprint 2 by OCR worker)
+- Expose `GET /receipts/{id}` — include `barcodeValue` and `barcodeType` (QR / EAN-13 / etc.) when present
+- `GET /expenses/{id}` — surface barcode fields if linked receipt has one
+- No barcode field in API response if value is null (omit key entirely, not null)
+
+**US-REC-06 — Restricted Member Upload**
+- Receipt upload endpoint already supports all roles — confirm RBAC policy allows RestrictedMember on `POST /receipts/upload`
+- `GET /expenses` for Restricted Member: filter to `assigned_to = current_user_id` only
+- `GET /receipts` for Restricted Member: return only receipts they uploaded
+- Test: Restricted Member upload → expense created → visible only to uploader and Owner/AdultMember who reviews it
+
+**US-EXP-03 — Notes & Attachments API**
+- `notes` column already exists on `expenses` table (added Sprint 3)
+- `attachments` table: `id`, `expense_id`, `file_name`, `file_path`, `file_size`, `mime_type`, `created_at`
+- `POST /expenses/{id}/attachments` — accept any MIME type up to 10 MB; write to `/storage/attachments/{expenseId}/{uuid}.{ext}`
+- `GET /expenses/{id}/attachments` — return list with `id`, `fileName`, `downloadUrl`, `fileSize`
+- `DELETE /expenses/{id}/attachments/{id}` — delete file and record
+- 10 MB limit: return 413 with `"File exceeds 10 MB limit"` message
+
+**US-BUD-01 — Budget API**
+- `budgets` table: `id`, `household_id`, `category`, `monthly_limit`, `effective_month`, `created_by`, `created_at`
+- `POST /budgets` — Owner only (403 for others); validate `monthly_limit > 0`
+- `GET /budgets` — return all active budgets for household; include `spent` (sum of expenses in category for current month) and `progress_percent`
+- `PUT /budgets/{id}` — update limit; recalculate progress immediately
+- `GET /budgets/{id}` — single budget with progress bar data
+
+**US-SRCH-01 — Search API**
+- PostgreSQL full-text search across `expenses`: merchant, notes, tags (via tsvector column)
+- `GET /expenses/search?q=&category=&from=&to=&minAmount=&maxAmount=&tags=`
+- Response within 1 second (add GIN index on tsvector column)
+- Restricted Member: results filtered to assigned expenses only
+- Return `total_count` and paginated results (`?page=&pageSize=`)
+
+---
+
+#### Senior Frontend Engineer (FE)
+
+**US-REC-04 — Image Quality Warning UI**
+- After upload: if BE response includes `imageQuality: "low"`, show amber banner: "This image may be hard to read. Consider retaking it."
+- Banner has "Dismiss" and "Replace Image" actions
+- "Replace Image" re-opens upload zone inline without navigating away
+- No banner for `imageQuality: "ok"` or when field is absent
+
+**US-REC-06 — Restricted Member Upload UI**
+- Upload page already functional — verify it is accessible to RestrictedMember role
+- Post-upload: show expense detail in read-only mode (no edit controls); show "Pending Review" status badge
+- Expense list for Restricted Member: "My Uploads" label instead of "My Expenses"; filter is enforced server-side
+
+**US-EXP-03 — Notes & Attachments UI**
+- Notes: existing textarea on expense edit form — confirm it saves correctly (wired in Sprint 3 entity but may not be surfaced in form)
+- Attachments: add file drop zone below notes section; show attached file list (name + size + delete button)
+- File size validation on client: reject > 10 MB with inline error before upload attempt
+- Download link for each attachment: opens in new tab
+
+**US-BUD-01 — Budget Settings UI**
+- `/settings/budgets` page: list of category budgets with progress bars (spent / limit)
+- "Add Budget" form: category selector + monthly limit input
+- Edit inline: click limit amount to edit in place, press Enter to save
+- Progress bar: green < 80%, amber 80–99%, red ≥ 100%
+
+---
+
+#### Senior OCR Engineer (OCR)
+
+**US-OCR-04 — Barcode & QR Worker**
+- ZXing already integrated (Sprint 2); ensure all 1D and 2D code types are enabled
+- Scan full image after preprocessing; store `{ value, type }` in OCR JSON output
+- Push `barcodeValue` and `barcodeType` fields in `ocr.results` Redis message
+- Performance: barcode scan must not extend total OCR time past 8-second target (run in parallel with Tesseract)
+- No barcode found → omit field from result (do not emit null)
+
+**US-REC-04 — Image Quality Detection Worker**
+- After `receipt.uploaded` event: run blur detection (Laplacian variance) and brightness check
+- Thresholds: blur variance < 100 → low quality; mean pixel brightness < 40 → low quality
+- Emit `PATCH /internal/receipts/{id}` with `imageQuality: "low" | "ok"` before OCR job is enqueued
+- Target: quality check completes within 500ms of upload
+
+---
+
+### Sprint 5 Definition of Done
+
+- [ ] Barcodes and QR codes decoded from receipts appear in receipt detail view; absent if not found
+- [ ] Blurry or dark image upload shows quality warning banner; dismissible; OCR still proceeds
+- [ ] Restricted Member can upload receipts; expense is visible only to them and Owners
+- [ ] Notes save correctly from expense edit form; attachments upload, download, and delete
+- [ ] Attachment > 10 MB rejected client-side and server-side with clear error
+- [ ] Budget can be set per category with monthly limit; progress bar reflects current-month spend
+- [ ] Budget limit of 0 is rejected with validation error
+- [ ] Expense search returns results within 1 second; filters combine correctly
+- [ ] Restricted Member search returns only assigned expenses
+- [ ] All new endpoints have integration tests
+
+---
+
+## Sprint 6 — Phase 2: Budgeting
+**Dates:** 2026-07-28 → 2026-08-08
+**Sprint Goal:** Household budget management is fully operational — shared budgets, threshold alerts, automatic monthly resets, and a spending summary dashboard are live.
+**Committed:** 21 points
+
+### Committed Stories
+
+| Story ID | Title | Points | Engineers |
+|----------|-------|--------|-----------|
+| US-BUD-02 | Household Shared Budget | 5 | BE + FE |
+| US-BUD-03 | Budget Threshold Alerts | 5 | BE + FE |
+| US-BUD-04 | Monthly Budget Reset | 3 | BE |
+| US-SRCH-02 | Spending Summary Dashboard | 5 | BE + FE |
+| US-SRCH-05 | Export Expense Report (CSV) | 3 | BE + FE |
+| **Total** | | **21** | |
+
+> If team is over-committed, drop US-SRCH-05 (3 pts) to Sprint 7 — it has no downstream dependencies.
+
+### Engineer Task Assignments — Sprint 6
+
+#### Senior Backend Engineer (BE)
+
+**US-BUD-02 — Shared Household Budget**
+- `budgets` table: add `type` column — `category` (existing) or `household`
+- Household budget: not scoped to a single category; tracks all spending across members
+- `GET /budgets` — return household budgets alongside category budgets; include per-member breakdown for Owner view
+- Member breakdown: `{ userId, displayName, contributed: amount }` — Owner only; other roles see aggregate only
+- `DELETE /budgets/{id}` — trigger in-app notification to all Adult Members: "Shared budget was removed by Owner"
+
+**US-BUD-03 — Budget Alerts**
+- Background job (Redis-triggered after each expense write): recalculate budget progress
+- If progress crosses 80% threshold: create notification record in `notifications` table
+- If progress crosses 100%: create separate "exceeded" notification
+- `notifications` table: `id`, `user_id`, `type`, `message`, `budget_id`, `created_at`, `dismissed_at`
+- `POST /notifications/{id}/dismiss` — set `dismissed_at`; alert does not re-fire until next monthly cycle
+
+**US-BUD-04 — Monthly Budget Reset**
+- Cron job (midnight on 1st of each month): snapshot current month's budget progress to `budget_history` table, then reset
+- `budget_history`: `id`, `budget_id`, `month`, `limit`, `spent`, `created_at` — append-only
+- On reset failure: log error, retry after 5 minutes (up to 3 attempts); emit alert to Owner via notification
+- `GET /budgets/history?month=` — return historical snapshots for a given month
+
+**US-SRCH-02 — Dashboard API**
+- `GET /dashboard/summary?month=YYYY-MM` — return: total spent, breakdown by category (amount + percentage), top 5 merchants, expense count
+- Owner: supports `?view=household` for all-member aggregation
+- Adult Member: own expenses + shared expenses they are part of
+- Response cached in Redis for 60 seconds (cache key: `dashboard:{userId}:{month}:{view}`)
+- Cache invalidated on any expense write for that user
+
+**US-SRCH-05 — CSV Export**
+- `GET /expenses/export?from=&to=` — stream CSV response with `Content-Disposition: attachment; filename=expenses-{from}-{to}.csv`
+- Columns: Date, Merchant, Category, Tags, Amount, Currency, Source (Manual/OCR), Notes
+- Restricted Member: own expenses only; Adult Member: own + shared
+- Empty range → empty CSV with header row (no error)
+
+---
+
+#### Senior Frontend Engineer (FE)
+
+**US-BUD-02 — Shared Budget UI**
+- Budget settings page: add "Household Budget" section separate from category budgets
+- Household budget card: total progress + per-member bar breakdown (Owner only; other roles see aggregate)
+- "Budget removed" in-app notification: banner at top of screen, auto-dismiss after 10 seconds
+
+**US-BUD-03 — Alert UI**
+- Notification bell icon in nav header: badge count of unread alerts
+- `/notifications` page: list of budget alerts (date, category, message); dismiss button per alert
+- Alert banner on budget card when category is ≥ 80%: amber for threshold, red for exceeded
+
+**US-SRCH-02 — Dashboard UI**
+- `/dashboard` page: total spend card, category breakdown donut chart, top merchants list
+- Month selector: current month default; previous months accessible via dropdown
+- Owner: "Household / My View" toggle
+- Empty state: "$0 total — add expenses to see your summary"
+- Load within 3 seconds (Redis-cached endpoint)
+
+**US-SRCH-05 — Export UI**
+- "Export CSV" button on expense list page (header area)
+- Date range picker modal: from/to inputs, "Export" CTA
+- On success: file downloads automatically; no navigation change
+- On empty range: file still downloads (empty CSV with headers)
+
+---
+
+### Sprint 6 Definition of Done
+
+- [ ] Shared household budget visible to all Adult Members with aggregate progress
+- [ ] Owner sees per-member contribution breakdown on household budget
+- [ ] Budget threshold alert fires at 80% and 100%; dismissed alerts do not re-fire within same month cycle
+- [ ] Budget resets automatically on the 1st of each month; historical data is preserved in `budget_history`
+- [ ] Reset failure is retried and Owner is notified via in-app notification
+- [ ] Dashboard loads within 3 seconds; shows total spend and category breakdown for selected month
+- [ ] Owner household view aggregates all member spending
+- [ ] CSV export downloads correctly; includes all specified columns; empty range returns header-only file
+- [ ] All new endpoints have integration tests
+
+---
+
+## Sprint 7 — Phase 2: Analytics + Hardening
+**Dates:** 2026-08-11 → 2026-08-22
+**Sprint Goal:** Spending trend and merchant analytics complete the Phase 2 intelligence layer. Second half of sprint is a hardening buffer — integration testing, performance tuning, and tech debt.
+**Committed:** 18 points (11 pts stories + 7 pts hardening)
+
+### Committed Stories
+
+| Story ID | Title | Points | Engineers |
+|----------|-------|--------|-----------|
+| US-SRCH-03 | Category Trend Report | 5 | BE + FE |
+| US-SRCH-04 | Merchant Analytics | 3 | BE + FE |
+| **Hardening** | Integration tests, load testing, performance tuning, tech debt | ~10 | ALL |
+| **Total** | | **18** | |
+
+> Sprint 7 is intentionally lighter on new stories. Six consecutive delivery sprints warrant a controlled buffer before Phase 3 planning begins.
+
+### Engineer Task Assignments — Sprint 7
+
+#### Senior Backend Engineer (BE)
+
+**US-SRCH-03 — Trend API**
+- `GET /analytics/trends?category=&months=6` — return monthly totals per category for the past N months
+- Each month: `{ month: "YYYY-MM", amount, expenseCount }`
+- Spike detection: if month-over-month increase > 20%, include `spike: true` flag on that month
+- Minimum data guard: if < 2 months of data, return `{ insufficient_data: true }` — no empty arrays
+
+**US-SRCH-04 — Merchant API**
+- `GET /analytics/merchants?from=&to=` — ranked list of merchants by total spend descending
+- Each entry: `{ merchant, totalSpent, visitCount, lastVisit }`
+- No minimum visit threshold — single-visit merchants appear in the list
+- Clicking a merchant: `GET /expenses?merchant={name}&from=&to=` (reuse existing search endpoint)
+
+**Hardening**
+- Load test search and dashboard endpoints: target < 1s search, < 3s dashboard at 50 concurrent users
+- Add database indexes if query plans show seq scans on `expenses` (merchant, category, date columns)
+- Review Redis cache hit rates; tune TTLs based on actual usage patterns
+
+---
+
+#### Senior Frontend Engineer (FE)
+
+**US-SRCH-03 — Trend Chart UI**
+- `/analytics` page: bar or line chart (use a lightweight chart library — Recharts or Chart.js)
+- Category filter: dropdown to focus chart on a single category
+- Spike months: visually highlighted bar (different colour or pattern)
+- Tooltip on hover: exact amount and month label
+- Insufficient data: replace chart with "Not enough data yet — add more expenses to see trends."
+
+**US-SRCH-04 — Merchant UI**
+- `/analytics/merchants` page: ranked table — merchant name, total spent, visit count, last visit date
+- Date range filter at top of page
+- Row click → navigates to filtered expense list for that merchant
+
+**Hardening**
+- Lighthouse audit on dashboard and expense list: target performance score ≥ 85
+- Accessibility pass: keyboard navigation, ARIA labels on charts and badges
+- Fix any TypeScript strict-mode warnings introduced in Sprints 4–6
+
+---
+
+#### Senior OCR Engineer (OCR)
+
+**Hardening**
+- Run OCR accuracy benchmark across 50 test receipts; document baseline accuracy per field
+- Profile Python worker memory usage under sustained load (20 concurrent jobs)
+- Clean up any temporary files left in `/storage` by failed jobs
+
+---
+
+### Sprint 7 Definition of Done
+
+- [ ] Category trend chart renders 6-month data; spikes (>20% MoM) are visually flagged
+- [ ] Insufficient data state shows message instead of empty chart
+- [ ] Merchant rankings list is accurate and sortable by date range
+- [ ] Search responds in < 1 second at 50 concurrent users (load test passing)
+- [ ] Dashboard responds in < 3 seconds at 50 concurrent users
+- [ ] No TypeScript strict-mode warnings in committed code
+- [ ] OCR accuracy baseline documented for Sprint 8+ Phase 3 reference
+
+---
+
+## Phase 2 Complete — End of Sprint 7 (2026-08-22)
+
+All 37 Phase 2 points delivered. Platform has full budget management, analytics, and search. Phase 3 (Intelligence) and Phase 4 (Mobile) planning to begin after Sprint 7 retrospective.
+
+**Phase 3 scope (not yet estimated):** merchant template learning, advanced receipt parsing, ML-assisted local parsing.
+**Phase 4 scope (not yet estimated):** React Native + Expo, offline sync.
 
 ---
 
 ## Velocity Tracking
 
-| Sprint | Committed | Completed | Velocity | Notes |
+| Sprint | Committed | Delivered | Velocity | Notes |
 |--------|-----------|-----------|----------|-------|
-| Sprint 1 | 19 | TBD | TBD | Baseline sprint |
-| Sprint 2 | 18 | TBD | TBD | Update after sprint review |
+| Sprint 1 | 19 | 19 | 19 | Baseline sprint |
+| Sprint 2 | 18 | 18 | 18 | REC-02 stretch not delivered — FE at capacity |
+| Sprint 3 | 20 | 20 | 20 | All 6 stories delivered |
+| Sprint 4 | 18 | TBD | TBD | Update after sprint review |
+| Sprint 5 | 20 | TBD | TBD | Update after sprint review |
+| Sprint 6 | 21 | TBD | TBD | Update after sprint review |
+| Sprint 7 | 18 | TBD | TBD | Update after sprint review |
 
-*Update after each sprint review to track actuals.*
+**Established velocity:** ~19 pts/sprint (18–20 range, 3-sprint average)

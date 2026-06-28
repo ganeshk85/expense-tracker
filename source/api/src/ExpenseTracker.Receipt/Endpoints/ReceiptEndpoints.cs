@@ -25,6 +25,9 @@ public static class ReceiptEndpoints
         group.MapGet("/{id:guid}/status", HandleGetStatus)
             .WithSummary("Poll OCR processing status for a receipt");
 
+        group.MapGet("/{id:guid}/thumbnail", HandleGetThumbnail)
+            .WithSummary("Serve the generated thumbnail image for a receipt");
+
         // Internal endpoint — accessible only by the OCR worker via X-Internal-Key header.
         // Intentionally excluded from the session-auth group to prevent user access.
         var internalGroup = app.MapGroup("/receipts")
@@ -63,6 +66,20 @@ public static class ReceiptEndpoints
 
         var result = await receiptService.GetStatusAsync(id, userId, ct);
         return Results.Ok(result);
+    }
+
+    private static async Task<IResult> HandleGetThumbnail(
+        Guid id,
+        IReceiptService receiptService,
+        HttpContext ctx,
+        CancellationToken ct)
+    {
+        var userIdStr = ctx.Session.GetString(SessionUserIdKey);
+        if (!Guid.TryParse(userIdStr, out var userId))
+            return Results.Problem("Session invalid.", statusCode: 401);
+
+        var result = await receiptService.GetThumbnailAsync(id, userId, ct);
+        return Results.File(result.FilePath, result.ContentType);
     }
 
     private static async Task<IResult> HandleUpdateThumbnail(

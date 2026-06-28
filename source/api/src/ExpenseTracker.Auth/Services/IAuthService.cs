@@ -22,4 +22,7 @@ public interface IAuthService
 
     /// <summary>Owner-only: enable or disable MFA for any user in the household.</summary>
     Task AdminToggleMfaAsync(Guid targetUserId, bool enabled, CancellationToken ct = default);
+
+    /// <summary>Owner-only: list all household members.</summary>
+    Task<IReadOnlyList<UserSummaryResponse>> ListUsersAsync(CancellationToken ct = default);
 }

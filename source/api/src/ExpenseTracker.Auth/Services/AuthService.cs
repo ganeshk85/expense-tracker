@@ -56,7 +56,7 @@ public sealed class AuthService(
     public async Task<InviteResponse> CreateInviteAsync(InviteRequest request, Guid invitedByUserId, CancellationToken ct = default)
     {
         if (!Enum.TryParse<UserRole>(request.Role, ignoreCase: true, out var role))
-            throw new ValidationException($"Invalid role '{request.Role}'. Valid values: Owner, AdultMember, RestrictedMember.");
+            throw new ValidationException($"Invalid role '{request.Role}'. Valid values: Admin, Contributor, Reader.");
 
         var existing = await users.FindByUsernameAsync(request.Username, ct);
         if (existing is not null)
@@ -188,5 +188,14 @@ public sealed class AuthService(
 
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await users.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<UserSummaryResponse>> ListUsersAsync(CancellationToken ct = default)
+    {
+        var all = await users.ListAllAsync(ct);
+        return all.Select(u => new UserSummaryResponse(
+            u.Id, u.Username, u.Role.ToString(), u.IsActive, u.MfaEnabled, u.LastLoginAt, u.CreatedAt))
+            .ToList()
+            .AsReadOnly();
     }
 }

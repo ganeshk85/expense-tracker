@@ -20,6 +20,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     {
         modelBuilder.Entity<User>(e =>
         {
+            e.ToTable("users");
             e.HasKey(u => u.Id);
             e.HasIndex(u => u.Username).IsUnique();
             e.Property(u => u.Role).HasConversion<string>();
@@ -27,6 +28,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         modelBuilder.Entity<InviteToken>(e =>
         {
+            e.ToTable("invite_tokens");
             e.HasKey(t => t.Id);
             e.HasIndex(t => t.Token).IsUnique();
             e.Property(t => t.AssignedRole).HasConversion<string>();
@@ -34,6 +36,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         modelBuilder.Entity<ReceiptEntity>(e =>
         {
+            e.ToTable("receipts");
             e.HasKey(r => r.Id);
             e.Property(r => r.Status).HasConversion<string>();
         });

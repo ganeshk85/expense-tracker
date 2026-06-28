@@ -4,7 +4,11 @@ namespace ExpenseTracker.Expense.Repositories;
 
 public interface IExpenseManagementRepository
 {
+    /// <summary>Read-only lookup (AsNoTracking). Use for GET responses only.</summary>
     Task<ExpenseEntity?> FindByIdAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>Tracked lookup. Use for update and correction operations so SaveChanges persists changes.</summary>
+    Task<ExpenseEntity?> FindByIdTrackedAsync(Guid id, CancellationToken ct = default);
 
     /// <param name="userId">When null, returns expenses for all users (Owner view).</param>
     Task<(IReadOnlyList<ExpenseEntity> Items, int Total)> ListAsync(

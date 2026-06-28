@@ -8,7 +8,7 @@ public sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<App
     public AppDbContext CreateDbContext(string[] args)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql("Host=localhost;Database=expense_tracker;Username=postgres;Password=postgres")
+            .UseNpgsql("Host=localhost;Database=expense_tracker;Username=postgres;Password=compnet1234")
             .Options;
         return new AppDbContext(options);
     }

@@ -54,6 +54,9 @@ x86/
 [Aa][Rr][Mm]/
 [Aa][Rr][Mm]64/
 binstobj/
+__pycache__/
+*.py[cod]
+*.egg-info/
 *.pyc
 *.pyo
 *.pyd

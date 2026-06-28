@@ -17,7 +17,7 @@ public sealed class User : BaseEntity
 
 public enum UserRole
 {
-    Owner,
-    AdultMember,
-    RestrictedMember
+    Admin,
+    Contributor,
+    Reader
 }

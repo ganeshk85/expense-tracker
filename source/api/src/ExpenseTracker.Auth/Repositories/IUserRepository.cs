@@ -6,6 +6,7 @@ public interface IUserRepository
 {
     Task<User?> FindByUsernameAsync(string username, CancellationToken ct = default);
     Task<User?> FindByIdAsync(Guid id, CancellationToken ct = default);
+    Task<IReadOnlyList<User>> ListAllAsync(CancellationToken ct = default);
     Task AddAsync(User user, CancellationToken ct = default);
     Task SaveChangesAsync(CancellationToken ct = default);
 }
