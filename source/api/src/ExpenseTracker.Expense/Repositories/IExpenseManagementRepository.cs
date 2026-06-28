@@ -60,6 +60,16 @@ public interface IExpenseManagementRepository
         decimal? minAmount, decimal? maxAmount, string[]? tags,
         int page, int pageSize, CancellationToken ct = default);
 
+    // ── Dashboard / Analytics ────────────────────────────────────────────────
+
+    Task<(decimal TotalSpent, int ExpenseCount, IReadOnlyList<(string Category, decimal Amount)> ByCategory, IReadOnlyList<(string Merchant, decimal TotalSpent, int VisitCount)> TopMerchants)>
+        GetDashboardDataAsync(Guid? userId, DateOnly month, int topMerchantsCount, CancellationToken ct = default);
+
+    // ── Export ───────────────────────────────────────────────────────────────
+
+    Task<IReadOnlyList<ExpenseEntity>> GetForExportAsync(
+        Guid? userId, string? userRole, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct = default);
+
     // ── Shared ───────────────────────────────────────────────────────────────
 
     Task SaveChangesAsync(CancellationToken ct = default);

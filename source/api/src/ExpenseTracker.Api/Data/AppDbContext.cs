@@ -2,10 +2,12 @@ using ExpenseTracker.Audit.Entities;
 using ExpenseTracker.Auth.Entities;
 using Microsoft.EntityFrameworkCore;
 using BudgetEntity = ExpenseTracker.Budget.Entities.Budget;
+using BudgetHistoryEntity = ExpenseTracker.Budget.Entities.BudgetHistory;
 using ExpenseAttachmentEntity = ExpenseTracker.Ocr.Entities.ExpenseAttachment;
 using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
 using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
 using ExpenseShareEntity = ExpenseTracker.Ocr.Entities.ExpenseShare;
+using NotificationEntity = ExpenseTracker.Budget.Entities.Notification;
 using ReceiptEntity = ExpenseTracker.Receipt.Entities.Receipt;
 
 namespace ExpenseTracker.Api.Data;
@@ -21,6 +23,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ExpenseShareEntity> ExpenseShares => Set<ExpenseShareEntity>();
     public DbSet<ExpenseAttachmentEntity> ExpenseAttachments => Set<ExpenseAttachmentEntity>();
     public DbSet<BudgetEntity> Budgets => Set<BudgetEntity>();
+    public DbSet<NotificationEntity> Notifications => Set<NotificationEntity>();
+    public DbSet<BudgetHistoryEntity> BudgetHistories => Set<BudgetHistoryEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -142,8 +146,32 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.ToTable("budgets");
             e.Property(b => b.Category).HasMaxLength(64).IsRequired();
             e.Property(b => b.MonthlyLimit).HasColumnType("numeric(18,4)").IsRequired();
+            e.Property(b => b.Type).HasMaxLength(16).IsRequired().HasDefaultValue("category");
             e.Property(b => b.CreatedAt).HasDefaultValueSql("now()");
+            // Unique constraint: one budget per (user, category) — household budgets use category="household"
             e.HasIndex(b => new { b.UserId, b.Category }).IsUnique();
+        });
+
+        modelBuilder.Entity<NotificationEntity>(e =>
+        {
+            e.HasKey(n => n.Id);
+            e.ToTable("notifications");
+            e.Property(n => n.Type).HasMaxLength(32).IsRequired();
+            e.Property(n => n.Message).HasMaxLength(512).IsRequired();
+            e.Property(n => n.CreatedAt).HasDefaultValueSql("now()");
+            e.HasIndex(n => new { n.UserId, n.CreatedAt });
+            e.HasIndex(n => n.BudgetId);
+        });
+
+        modelBuilder.Entity<BudgetHistoryEntity>(e =>
+        {
+            e.HasKey(h => h.Id);
+            e.ToTable("budget_history");
+            e.Property(h => h.Limit).HasColumnType("numeric(18,4)").IsRequired();
+            e.Property(h => h.Spent).HasColumnType("numeric(18,4)").IsRequired();
+            e.Property(h => h.CreatedAt).HasDefaultValueSql("now()");
+            // Prevent duplicate snapshots for the same budget+month.
+            e.HasIndex(h => new { h.BudgetId, h.Month }).IsUnique();
         });
     }
 }

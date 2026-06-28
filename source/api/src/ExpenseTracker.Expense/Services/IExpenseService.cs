@@ -73,4 +73,9 @@ public interface IExpenseService
 
     Task<ExpenseListResponse> SearchAsync(
         SearchExpensesRequest request, Guid userId, string userRole, CancellationToken ct = default);
+
+    // ── Export ───────────────────────────────────────────────────────────────
+
+    Task<IReadOnlyList<ExpenseResponse>> ExportAsync(
+        Guid userId, string userRole, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct = default);
 }

@@ -11,6 +11,7 @@ using ExpenseTracker.Auth.Repositories;
 using ExpenseTracker.Budget;
 using ExpenseTracker.Budget.Endpoints;
 using ExpenseTracker.Budget.Repositories;
+using ExpenseTracker.Budget.Services;
 using ExpenseTracker.Expense;
 using ExpenseTracker.Expense.Endpoints;
 using ExpenseTracker.Expense.Repositories;
@@ -20,6 +21,7 @@ using ExpenseTracker.Receipt;
 using ExpenseTracker.Receipt.Endpoints;
 using ExpenseTracker.Receipt.Repositories;
 using ExpenseTracker.Receipt.Services;
+using ExpenseTracker.Shared;
 using ExpenseTracker.Shared.Exceptions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -117,6 +119,9 @@ builder.Services.AddScoped<IExpenseManagementRepository>(sp => sp.GetRequiredSer
 // Budget repository (concrete impl lives in Api; interface in Budget module)
 builder.Services.AddScoped<IBudgetRepository, BudgetRepository>();
 
+// Budget alert trigger — decoupled via Shared interface so Expense module can call it without circular dep.
+builder.Services.AddScoped<IBudgetAlertService>(sp => (IBudgetAlertService)sp.GetRequiredService<ExpenseTracker.Budget.Services.IBudgetService>());
+
 // Modules
 builder.Services.AddAuthModule();
 builder.Services.AddReceiptModule();
@@ -175,6 +180,7 @@ app.MapAuthEndpoints();
 app.MapReceiptEndpoints();
 app.MapAuditEndpoints();
 app.MapExpenseEndpoints();
+app.MapDashboardEndpoints();
 app.MapBudgetEndpoints();
 
 app.Run();

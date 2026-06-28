@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import { getNotifications } from '@/api/notifications'
 import styles from './NavSidebar.module.css'
 
 function IconDashboard() {
@@ -47,6 +49,15 @@ function IconBudget() {
   )
 }
 
+function IconBell() {
+  return (
+    <svg className={styles.navIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    </svg>
+  )
+}
+
 function IconSettings() {
   return (
     <svg className={styles.navIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -62,6 +73,23 @@ function isActive(prefix: string, pathname: string): boolean {
 
 export function NavSidebar() {
   const pathname = usePathname()
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  async function fetchUnreadCount() {
+    try {
+      const res = await getNotifications()
+      setUnreadCount(res.notifications.length)
+    } catch {
+      // Silently ignore — sidebar badge is non-critical
+    }
+  }
+
+  useEffect(() => {
+    void fetchUnreadCount()
+    const interval = setInterval(() => { void fetchUnreadCount() }, 30_000)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function linkClass(prefix: string): string {
     return `${styles.navLink ?? ''} ${isActive(prefix, pathname) ? (styles.navLinkActive ?? '') : ''}`
@@ -103,6 +131,19 @@ export function NavSidebar() {
           <Link href="/budgets" className={linkClass('/budgets')} aria-current={ariaCurrent('/budgets')}>
             <IconBudget />
             Budgets
+          </Link>
+        </li>
+        <li>
+          <Link href="/notifications" className={linkClass('/notifications')} aria-current={ariaCurrent('/notifications')}>
+            <span className={styles.bellWrapper}>
+              <IconBell />
+              {unreadCount > 0 && (
+                <span className={styles.badge} aria-label={`${unreadCount} unread notifications`}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </span>
+            Notifications
           </Link>
         </li>
         <li>

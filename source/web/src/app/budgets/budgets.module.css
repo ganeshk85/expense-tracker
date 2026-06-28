@@ -258,3 +258,145 @@
   color: #6b7280;
   padding: 1rem 0;
 }
+
+/* Progress bars */
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.progressMeta {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.progressTrack {
+  flex: 1;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 4rem;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progressGreen { background: #22c55e; }
+.progressAmber { background: #f59e0b; }
+.progressRed   { background: #ef4444; }
+
+/* Household section */
+
+.householdSection {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.householdCard {
+  margin-bottom: 0.75rem;
+}
+
+.householdHeader {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.householdLabel {
+  font-weight: 600;
+  color: #0369a1;
+  flex: 1;
+}
+
+.householdAmount {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.householdPct {
+  font-size: 0.8125rem;
+  color: #6b7280;
+}
+
+.memberBreakdown {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #bae6fd;
+}
+
+.memberBreakdownTitle {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0369a1;
+  margin-bottom: 0.5rem;
+}
+
+.memberList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.memberItem {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.addHouseholdForm {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+/* Alert banner */
+
+.alertBanner {
+  padding: 0.625rem 0.875rem;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  color: #92400e;
+  margin-bottom: 0.75rem;
+}
+
+/* Inline progress cell layout */
+
+.tdProgress {
+  min-width: 12rem;
+}
+
+.progressStack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.progressLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+  color: #6b7280;
+}
+

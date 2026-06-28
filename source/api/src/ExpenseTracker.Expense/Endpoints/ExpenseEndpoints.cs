@@ -1,5 +1,7 @@
+using System.Text;
 using ExpenseTracker.Expense.Models;
 using ExpenseTracker.Expense.Services;
+using ExpenseTracker.Shared;
 using ExpenseTracker.Shared.Exceptions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -76,6 +78,10 @@ public static class ExpenseEndpoints
         group.MapGet("/search", HandleSearch)
             .WithSummary("Multi-field search across expenses");
 
+        // ── Export ────────────────────────────────────────────────────────────
+        group.MapGet("/export", HandleExport)
+            .WithSummary("Stream expenses as CSV for the given date range");
+
         return app;
     }
 
@@ -84,6 +90,7 @@ public static class ExpenseEndpoints
     private static async Task<IResult> HandleCreate(
         CreateExpenseRequest request,
         IExpenseService service,
+        IBudgetAlertService? alertService,
         HttpContext ctx,
         CancellationToken ct)
     {
@@ -91,6 +98,10 @@ public static class ExpenseEndpoints
         if (userId is null) return Results.Problem("Session invalid.", statusCode: 401);
 
         var result = await service.CreateManualAsync(request, userId.Value, ct);
+
+        if (alertService is not null && request.Category is not null)
+            await alertService.CheckAndFireAlertsAsync(userId.Value, request.Category, ct);
+
         return Results.Created($"/expenses/{result.Id}", result);
     }
 
@@ -128,6 +139,7 @@ public static class ExpenseEndpoints
         Guid id,
         UpdateExpenseRequest request,
         IExpenseService service,
+        IBudgetAlertService? alertService,
         HttpContext ctx,
         CancellationToken ct)
     {
@@ -138,6 +150,10 @@ public static class ExpenseEndpoints
         try
         {
             var result = await service.UpdateAsync(id, request, userId.Value, role, ct);
+
+            if (alertService is not null && request.Category is not null)
+                await alertService.CheckAndFireAlertsAsync(userId.Value, request.Category, ct);
+
             return Results.Ok(result);
         }
         catch (ConflictException ex) when (ex.Message == "shares_out_of_sync")
@@ -360,6 +376,53 @@ public static class ExpenseEndpoints
 
         var result = await service.SearchAsync(request, userId.Value, role, ct);
         return Results.Ok(result);
+    }
+
+    // ── Export handler ────────────────────────────────────────────────────────
+
+    private static async Task<IResult> HandleExport(
+        IExpenseService service,
+        HttpContext ctx,
+        CancellationToken ct,
+        string? from = null,
+        string? to = null)
+    {
+        var userId = GetUserId(ctx);
+        if (userId is null) return Results.Problem("Session invalid.", statusCode: 401);
+        var role = ctx.Session.GetString(SessionRoleKey) ?? string.Empty;
+
+        DateTimeOffset? fromDate = from is not null && DateTimeOffset.TryParse(from, out var f) ? f : null;
+        DateTimeOffset? toDate = to is not null && DateTimeOffset.TryParse(to, out var t) ? t.AddDays(1).AddSeconds(-1) : null;
+
+        var expenses = await service.ExportAsync(userId.Value, role, fromDate, toDate, ct);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Date,Merchant,Category,Tags,Amount,Currency,Source,Notes");
+
+        foreach (var e in expenses)
+        {
+            var date = e.Date.HasValue ? e.Date.Value.ToString("yyyy-MM-dd") : string.Empty;
+            var merchant = CsvEscape(e.MerchantName ?? string.Empty);
+            var category = CsvEscape(e.Category ?? string.Empty);
+            var tags = CsvEscape(e.Tags is { Length: > 0 } ? string.Join(";", e.Tags) : string.Empty);
+            var amount = e.Total.HasValue ? e.Total.Value.ToString("F2") : "0.00";
+            var source = CsvEscape(e.Source?.ToString() ?? string.Empty);
+            var notes = CsvEscape(e.Notes ?? string.Empty);
+
+            sb.AppendLine($"{date},{merchant},{category},{tags},{amount},USD,{source},{notes}");
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        var filename = $"expenses-{from ?? "all"}-{to ?? "all"}.csv";
+
+        return Results.File(bytes, "text/csv", filename);
+    }
+
+    private static string CsvEscape(string value)
+    {
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        return value;
     }
 
     // ── Session helpers ───────────────────────────────────────────────────────

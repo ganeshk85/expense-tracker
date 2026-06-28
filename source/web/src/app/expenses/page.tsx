@@ -46,6 +46,7 @@ export default function ExpensesPage() {
   const [allHousehold, setAllHousehold] = useState(false)
   const [deleteState, setDeleteState] = useState<DeleteState>(null)
   const [deleting, setDeleting] = useState(false)
+  const [sessionLoaded, setSessionLoaded] = useState(false)
 
   // Search / filter state (US-SRCH-01)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -58,6 +59,11 @@ export default function ExpensesPage() {
   const [searchMaxAmount, setSearchMaxAmount] = useState('')
   const [isSearchActive, setIsSearchActive] = useState(false)
 
+  // Export CSV state
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportFrom, setExportFrom] = useState('')
+  const [exportTo, setExportTo] = useState('')
+
   const isAdmin = session?.role === 'Admin'
   const isReader = session?.role === 'Reader'
 
@@ -67,6 +73,8 @@ export default function ExpensesPage() {
       setSession(s)
     } catch {
       // Not logged in — middleware should redirect, ignore silently
+    } finally {
+      setSessionLoaded(true)
     }
   }
 
@@ -89,9 +97,10 @@ export default function ExpensesPage() {
   }, [])
 
   useEffect(() => {
+    if (!sessionLoaded) return
     void loadExpenses()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allHousehold, isAdmin])
+  }, [allHousehold, sessionLoaded])
 
   async function handleDelete(id: string) {
     setDeleting(true)
@@ -176,6 +185,13 @@ export default function ExpensesPage() {
           >
             {searchOpen ? 'Hide Filters' : 'Search / Filter'}
           </button>
+          <button
+            className={styles.secondaryButton}
+            onClick={() => setExportOpen(v => !v)}
+            aria-expanded={exportOpen}
+          >
+            Export CSV
+          </button>
           {!isReader && (
             <Link href="/expenses/new" className={styles.primaryButton}>
               + New Expense
@@ -183,6 +199,43 @@ export default function ExpensesPage() {
           )}
         </div>
       </div>
+
+      {/* Export CSV inline form */}
+      {exportOpen && (
+        <div className={styles.exportPanel}>
+          <p className={styles.exportTitle}>Download Expenses as CSV</p>
+          <div className={styles.exportFields}>
+            <div className={styles.exportField}>
+              <label htmlFor="exportFrom" className={styles.exportLabel}>From</label>
+              <input
+                id="exportFrom"
+                type="date"
+                className={styles.exportInput}
+                value={exportFrom}
+                onChange={e => setExportFrom(e.target.value)}
+              />
+            </div>
+            <div className={styles.exportField}>
+              <label htmlFor="exportTo" className={styles.exportLabel}>To</label>
+              <input
+                id="exportTo"
+                type="date"
+                className={styles.exportInput}
+                value={exportTo}
+                onChange={e => setExportTo(e.target.value)}
+              />
+            </div>
+            <a
+              href={`/api/expenses/export${exportFrom || exportTo ? `?from=${exportFrom}&to=${exportTo}` : ''}`}
+              className={styles.primaryButton}
+              download
+              onClick={() => setExportOpen(false)}
+            >
+              Download
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* US-REC-06: Reader banner */}
       {isReader && (

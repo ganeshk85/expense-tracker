@@ -201,10 +201,20 @@ export interface SearchExpensesParams {
 
 // ── Budgets ───────────────────────────────────────────────────────────────────
 
+export interface MemberContributionResponse {
+  userId: string
+  displayName: string
+  contributed: number
+}
+
 export interface BudgetResponse {
   id: string
   category: string
   monthlyLimit: number
+  type: 'category' | 'household'
+  spent: number
+  progressPercent: number
+  memberBreakdown: MemberContributionResponse[] | null
   createdAt: string
   updatedAt: string
 }
@@ -216,8 +226,58 @@ export interface BudgetListResponse {
 export interface CreateBudgetRequest {
   category: string
   monthlyLimit: number
+  type?: 'category' | 'household'
 }
 
 export interface UpdateBudgetRequest {
   monthlyLimit: number
+}
+
+export interface BudgetHistoryResponse {
+  id: string
+  budgetId: string
+  month: string
+  limit: number
+  spent: number
+}
+
+export interface BudgetHistoryListResponse {
+  items: BudgetHistoryResponse[]
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export interface NotificationResponse {
+  id: string
+  type: 'budget_threshold' | 'budget_exceeded' | 'budget_deleted'
+  message: string
+  budgetId: string | null
+  createdAt: string
+  dismissedAt: string | null
+}
+
+export interface NotificationListResponse {
+  notifications: NotificationResponse[]
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+export interface CategoryBreakdownItem {
+  category: string
+  amount: number
+  percentage: number
+}
+
+export interface TopMerchantItem {
+  merchant: string
+  totalSpent: number
+  visitCount: number
+}
+
+export interface DashboardSummaryResponse {
+  month: string
+  totalSpent: number
+  expenseCount: number
+  categoryBreakdown: CategoryBreakdownItem[]
+  topMerchants: TopMerchantItem[]
 }

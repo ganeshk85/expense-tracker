@@ -260,6 +260,82 @@ internal sealed class ExpenseRepository(AppDbContext db)
         return (items.AsReadOnly(), total);
     }
 
+    // ── Dashboard / Analytics ────────────────────────────────────────────────
+
+    public async Task<(decimal TotalSpent, int ExpenseCount,
+        IReadOnlyList<(string Category, decimal Amount)> ByCategory,
+        IReadOnlyList<(string Merchant, decimal TotalSpent, int VisitCount)> TopMerchants)>
+        GetDashboardDataAsync(Guid? userId, DateOnly month, int topMerchantsCount, CancellationToken ct = default)
+    {
+        var from = new DateTimeOffset(month.Year, month.Month, month.Day, 0, 0, 0, TimeSpan.Zero);
+        var to = from.AddMonths(1);
+
+        var query = db.Expenses.AsNoTracking()
+            .Where(e => e.Date >= from && e.Date < to);
+
+        if (userId.HasValue)
+            query = query.Where(e => e.UserId == userId.Value);
+
+        var totalSpent = await query.Where(e => e.Total.HasValue).SumAsync(e => e.Total!.Value, ct);
+        var expenseCount = await query.CountAsync(ct);
+
+        var byCategory = await query
+            .Where(e => e.Category != null && e.Total.HasValue)
+            .GroupBy(e => e.Category!)
+            .Select(g => new { Category = g.Key, Amount = g.Sum(e => e.Total!.Value) })
+            .OrderByDescending(x => x.Amount)
+            .ToListAsync(ct);
+
+        var topMerchants = await query
+            .Where(e => e.MerchantName != null && e.Total.HasValue)
+            .GroupBy(e => e.MerchantName!)
+            .Select(g => new { Merchant = g.Key, TotalSpent = g.Sum(e => e.Total!.Value), VisitCount = g.Count() })
+            .OrderByDescending(x => x.TotalSpent)
+            .Take(topMerchantsCount)
+            .ToListAsync(ct);
+
+        return (
+            totalSpent,
+            expenseCount,
+            byCategory.Select(x => (x.Category, x.Amount)).ToList().AsReadOnly(),
+            topMerchants.Select(x => (x.Merchant, x.TotalSpent, x.VisitCount)).ToList().AsReadOnly()
+        );
+    }
+
+    // ── Export ───────────────────────────────────────────────────────────────
+
+    public async Task<IReadOnlyList<ExpenseEntity>> GetForExportAsync(
+        Guid? userId, string? userRole, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct = default)
+    {
+        var query = db.Expenses
+            .Include(e => e.Items)
+            .Include(e => e.Shares)
+            .AsNoTracking();
+
+        if (userId.HasValue)
+        {
+            if (userRole == ContributorRole)
+            {
+                var uid = userId.Value;
+                query = query.Where(e =>
+                    e.UserId == uid ||
+                    (e.IsShared && e.Shares.Any(s => s.UserId == uid)));
+            }
+            else
+            {
+                query = query.Where(e => e.UserId == userId.Value);
+            }
+        }
+
+        if (from.HasValue)
+            query = query.Where(e => e.Date >= from.Value);
+
+        if (to.HasValue)
+            query = query.Where(e => e.Date <= to.Value);
+
+        return await query.OrderByDescending(e => e.Date ?? e.CreatedAt).ToListAsync(ct);
+    }
+
     // ── Shared ───────────────────────────────────────────────────────────────
 
     public Task SaveChangesAsync(CancellationToken ct = default)

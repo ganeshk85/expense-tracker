@@ -562,6 +562,23 @@ public sealed class ExpenseService(
         return new ExpenseListResponse(responses.AsReadOnly(), total, request.Page, request.PageSize);
     }
 
+    // ── Export ───────────────────────────────────────────────────────────────
+
+    public async Task<IReadOnlyList<ExpenseResponse>> ExportAsync(
+        Guid userId, string userRole, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct = default)
+    {
+        var filterUserId = userRole == AdminRole ? (Guid?)null : userId;
+        var filterRole = filterUserId.HasValue ? userRole : null;
+
+        var items = await repo.GetForExportAsync(filterUserId, filterRole, from, to, ct);
+
+        var responses = new List<ExpenseResponse>(items.Count);
+        foreach (var e in items)
+            responses.Add(await BuildResponseAsync(e, ct));
+
+        return responses.AsReadOnly();
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private async Task<ExpenseResponse> BuildResponseAsync(ExpenseEntity e, CancellationToken ct)

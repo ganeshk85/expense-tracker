@@ -6,6 +6,7 @@ const apiOrigin = new URL(apiUrl).origin
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  reactStrictMode: false,
   experimental: {
     typedRoutes: true,
   },

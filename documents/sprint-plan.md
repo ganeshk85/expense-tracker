@@ -538,14 +538,14 @@ The Sprint 1 DoD checklist was marked complete based on backend delivery. The FE
 
 ### Sprint 6 Definition of Done
 
-- [ ] Shared household budget visible to all Adult Members with aggregate progress
-- [ ] Owner sees per-member contribution breakdown on household budget
-- [ ] Budget threshold alert fires at 80% and 100%; dismissed alerts do not re-fire within same month cycle
-- [ ] Budget resets automatically on the 1st of each month; historical data is preserved in `budget_history`
-- [ ] Reset failure is retried and Owner is notified via in-app notification
-- [ ] Dashboard loads within 3 seconds; shows total spend and category breakdown for selected month
-- [ ] Owner household view aggregates all member spending
-- [ ] CSV export downloads correctly; includes all specified columns; empty range returns header-only file
+- [x] Shared household budget visible to all Adult Members with aggregate progress
+- [x] Owner sees per-member contribution breakdown on household budget
+- [x] Budget threshold alert fires at 80% and 100%; dismissed alerts do not re-fire within same month cycle
+- [x] Budget resets automatically on the 1st of each month; historical data is preserved in `budget_history`
+- [x] Reset failure is retried and Owner is notified via in-app notification
+- [x] Dashboard loads within 3 seconds; shows total spend and category breakdown for selected month
+- [x] Owner household view aggregates all member spending
+- [x] CSV export downloads correctly; includes all specified columns; empty range returns header-only file
 - [ ] All new endpoints have integration tests
 
 ---
@@ -649,7 +649,7 @@ All 37 Phase 2 points delivered. Platform has full budget management, analytics,
 | Sprint 3 | 20 | 20 | 20 | All 6 stories delivered |
 | Sprint 4 | 18 | TBD | TBD | Update after sprint review |
 | Sprint 5 | 20 | TBD | TBD | Update after sprint review |
-| Sprint 6 | 21 | TBD | TBD | Update after sprint review |
+| Sprint 6 | 21 | 21 | 21 | All 5 stories delivered; integration tests pending |
 | Sprint 7 | 18 | TBD | TBD | Update after sprint review |
 
 **Established velocity:** ~19 pts/sprint (18–20 range, 3-sprint average)

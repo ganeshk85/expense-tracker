@@ -12,6 +12,7 @@ public static class BudgetModuleExtensions
     public static IServiceCollection AddBudgetModule(this IServiceCollection services)
     {
         services.AddScoped<IBudgetService, BudgetService>();
+        services.AddHostedService<BudgetResetService>();
         return services;
     }
 }

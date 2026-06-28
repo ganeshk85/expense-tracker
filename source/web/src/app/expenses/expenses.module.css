@@ -328,3 +328,53 @@
   margin-top: 0.5rem;
   font-style: italic;
 }
+
+/* Export CSV panel */
+
+.exportPanel {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.exportTitle {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #15803d;
+  margin: 0 0 0.75rem;
+}
+
+.exportFields {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.exportField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.exportLabel {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.exportInput {
+  padding: 0.4375rem 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  color: #111827;
+  background: #ffffff;
+}
+
+.exportInput:focus {
+  outline: 2px solid #4f46e5;
+  outline-offset: 1px;
+}
