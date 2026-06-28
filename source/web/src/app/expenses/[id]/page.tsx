@@ -4,15 +4,26 @@ import { use, useEffect, useState, KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
+  assignShares,
+  attachReceipt,
   correctExpense,
   deleteExpense,
+  detachReceipt,
   getExpense,
+  getSession,
   updateExpense,
 } from '@/api/expenses'
-import type { ExpenseResponse } from '@/api/types'
+import type { ExpenseResponse, ExpenseShareResponse, ReceiptSummaryResponse, SessionResponse } from '@/api/types'
 import styles from './expense-detail.module.css'
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000'
 const CATEGORIES = ['Groceries', 'Dining', 'Utilities', 'Transport', 'Health', 'Other']
+
+function toAbsoluteUrl(url: string): string {
+  return url.startsWith('http') ? url : `${API_BASE}${url}`
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
 interface ItemForm {
   id?: string
@@ -70,6 +81,16 @@ function itemsTotal(items: ItemForm[]): number {
   }, 0)
 }
 
+// ── Shared expense row editor ─────────────────────────────────────────────────
+
+interface ShareRow {
+  userId: string
+  username: string
+  value: string // amount or percentage string
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function ExpenseDetailPage({
   params,
 }: {
@@ -79,6 +100,7 @@ export default function ExpenseDetailPage({
   const router = useRouter()
 
   const [expense, setExpense] = useState<ExpenseResponse | null>(null)
+  const [session, setSession] = useState<SessionResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -86,6 +108,11 @@ export default function ExpenseDetailPage({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirming, setConfirming] = useState(false)
+
+  // Section collapse state
+  const [itemsExpanded, setItemsExpanded] = useState(true)
+  const [sharesExpanded, setSharesExpanded] = useState(true)
+  const [receiptsExpanded, setReceiptsExpanded] = useState(true)
 
   // Form state
   const [merchantName, setMerchantName] = useState('')
@@ -100,6 +127,18 @@ export default function ExpenseDetailPage({
   const [pendingTag, setPendingTag] = useState('')
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState<ItemForm[]>([])
+
+  // US-EXP-04: Shared expense state
+  const [isShared, setIsShared] = useState(false)
+  const [splitType, setSplitType] = useState<'amount' | 'percentage'>('percentage')
+  const [shareRows, setShareRows] = useState<ShareRow[]>([])
+  const [assigningShares, setAssigningShares] = useState(false)
+  const [sharesOutOfSync, setSharesOutOfSync] = useState(false)
+
+  // US-REC-03: Receipt gallery state
+  const [attachReceiptId, setAttachReceiptId] = useState('')
+  const [attaching, setAttaching] = useState(false)
+  const [detachTarget, setDetachTarget] = useState<string | null>(null)
 
   const today = new Date().toISOString().split('T').at(0) ?? ''
 
@@ -120,13 +159,26 @@ export default function ExpenseDetailPage({
       quantity: String(i.quantity),
       unitPrice: String(i.unitPrice),
     })))
+    setIsShared(e.isShared)
+    // Build share rows from existing shares (no username lookup — showing userId for now)
+    setShareRows(
+      e.shares.map(s => ({
+        userId: s.userId,
+        username: s.userId, // will be resolved from members list in future
+        value: splitType === 'percentage'
+          ? String(s.percentage ?? '')
+          : String(s.amount ?? ''),
+      }))
+    )
+    setSharesOutOfSync(false)
   }
 
   useEffect(() => {
     async function load() {
       try {
-        const e = await getExpense(id)
+        const [e, sess] = await Promise.all([getExpense(id), getSession()])
         setExpense(e)
+        setSession(sess)
         populateForm(e)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load expense.')
@@ -144,7 +196,6 @@ export default function ExpenseDetailPage({
     expense.ocrStatus === 'complete' &&
     expense.confidenceJson !== null
 
-  // Show total mismatch warning if items exist and total diverges
   const computedItemsTotal = itemsTotal(items)
   const parsedTotal = parseFloat(total) || 0
   const showTotalMismatch =
@@ -152,7 +203,8 @@ export default function ExpenseDetailPage({
     parsedTotal > 0 &&
     Math.abs(computedItemsTotal - parsedTotal) > 0.01
 
-  // Tag helpers
+  // ── Tag helpers ──────────────────────────────────────────────────────────────
+
   function addTag() {
     const trimmed = pendingTag.trim()
     if (trimmed && !tags.includes(trimmed)) setTags(prev => [...prev, trimmed])
@@ -166,7 +218,8 @@ export default function ExpenseDetailPage({
     }
   }
 
-  // Item helpers
+  // ── Item helpers ─────────────────────────────────────────────────────────────
+
   function updateItem(idx: number, field: keyof ItemForm, value: string) {
     setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item))
   }
@@ -174,7 +227,6 @@ export default function ExpenseDetailPage({
   function addItem() {
     setItems(prev => [...prev, { name: '', quantity: '1', unitPrice: '0' }])
   }
-
   function buildItemsPayload() {
     return items.map(i => ({
       id: i.id,
@@ -183,6 +235,32 @@ export default function ExpenseDetailPage({
       unitPrice: parseFloat(i.unitPrice) || 0,
     }))
   }
+
+  // ── Share helpers ────────────────────────────────────────────────────────────
+
+  function updateShareRow(idx: number, value: string) {
+    setShareRows(prev => prev.map((r, i) => i === idx ? { ...r, value } : r))
+  }
+
+  function addShareRow() {
+    setShareRows(prev => [...prev, { userId: '', username: '', value: '' }])
+  }
+
+  function removeShareRow(idx: number) {
+    setShareRows(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  function sharesSum(): number {
+    return shareRows.reduce((sum, r) => sum + (parseFloat(r.value) || 0), 0)
+  }
+
+  function sharesValid(): boolean {
+    if (shareRows.length === 0) return false
+    if (splitType === 'percentage') return Math.abs(sharesSum() - 100) <= 0.01
+    return Math.abs(sharesSum() - parsedTotal) <= 0.01
+  }
+
+  // ── Form submit ──────────────────────────────────────────────────────────────
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -216,10 +294,16 @@ export default function ExpenseDetailPage({
       })
       setExpense(updated)
       populateForm(updated)
+      setSharesOutOfSync(false)
       setSuccess('Expense saved.')
       setTimeout(() => setSuccess(null), 3000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save expense.')
+      if (err instanceof Error && err.message === 'shares_out_of_sync') {
+        setSharesOutOfSync(true)
+        setError('Total changed — shares need to be re-split before saving.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to save expense.')
+      }
     } finally {
       setSaving(false)
     }
@@ -265,6 +349,64 @@ export default function ExpenseDetailPage({
     }
   }
 
+  async function handleAssignShares() {
+    if (!sharesValid()) return
+    setAssigningShares(true)
+    setError(null)
+    try {
+      const updated = await assignShares(id, {
+        shares: shareRows.map(r => ({
+          userId: r.userId,
+          ...(splitType === 'percentage'
+            ? { percentage: parseFloat(r.value) || 0 }
+            : { amount: parseFloat(r.value) || 0 }),
+        })),
+      })
+      setExpense(updated)
+      populateForm(updated)
+      setSharesOutOfSync(false)
+      setSuccess('Shares saved.')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to assign shares.')
+    } finally {
+      setAssigningShares(false)
+    }
+  }
+
+  async function handleAttachReceipt() {
+    const rid = attachReceiptId.trim()
+    if (!rid) return
+    setAttaching(true)
+    setError(null)
+    try {
+      const updated = await attachReceipt(id, rid)
+      setExpense(updated)
+      setAttachReceiptId('')
+      setSuccess('Receipt attached.')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to attach receipt.')
+    } finally {
+      setAttaching(false)
+    }
+  }
+
+  async function handleDetachReceipt(receiptId: string) {
+    setError(null)
+    try {
+      await detachReceipt(id, receiptId)
+      setExpense(prev => prev
+        ? { ...prev, receipts: prev.receipts.filter(r => r.id !== receiptId) }
+        : prev)
+      setDetachTarget(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to detach receipt.')
+    }
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
   if (loading) return <main className={styles.container}><p className={styles.loadingText}>Loading…</p></main>
 
   if (!expense) {
@@ -275,6 +417,10 @@ export default function ExpenseDetailPage({
       </main>
     )
   }
+
+  const isAdmin = session?.role === 'Admin'
+  const receipts: ReceiptSummaryResponse[] = expense.receipts
+  const existingShares: ExpenseShareResponse[] = expense.shares
 
   return (
     <main className={styles.container}>
@@ -288,6 +434,9 @@ export default function ExpenseDetailPage({
           <span className={`${styles.badge} ${expense.source === 'OCR' ? styles.sourceOCR : styles.sourceManual}`}>
             {expense.source}
           </span>
+          {expense.isShared && (
+            <span className={styles.sharedBadge}>Shared</span>
+          )}
         </div>
       </div>
 
@@ -296,7 +445,7 @@ export default function ExpenseDetailPage({
           <span className={styles.ocrBannerIcon}>⚠</span>
           <div className={styles.ocrBannerText}>
             <strong>OCR data needs review</strong>
-            Fields highlighted with low confidence may need correction. Review and click "Confirm Expense" when done.
+            Fields highlighted with low confidence may need correction. Review and click &ldquo;Confirm Expense&rdquo; when done.
           </div>
         </div>
       )}
@@ -305,6 +454,7 @@ export default function ExpenseDetailPage({
       {success && <p role="status" className={styles.successMessage}>{success}</p>}
 
       <form onSubmit={handleSave} noValidate className={styles.form}>
+        {/* ── Merchant ── */}
         <div className={styles.section}>
           <h2 className={styles.sectionTitle}>Merchant</h2>
           <div className={styles.fieldRow}>
@@ -336,6 +486,7 @@ export default function ExpenseDetailPage({
           </div>
         </div>
 
+        {/* ── Date & Time ── */}
         <div className={styles.section}>
           <h2 className={styles.sectionTitle}>Date & Time</h2>
           <div className={styles.fieldRow}>
@@ -366,6 +517,7 @@ export default function ExpenseDetailPage({
           </div>
         </div>
 
+        {/* ── Amounts ── */}
         <div className={styles.section}>
           <h2 className={styles.sectionTitle}>Amounts</h2>
           <div className={styles.fieldRow}>
@@ -414,6 +566,7 @@ export default function ExpenseDetailPage({
           </div>
         </div>
 
+        {/* ── Classification ── */}
         <div className={styles.section}>
           <h2 className={styles.sectionTitle}>Classification</h2>
           <div className={styles.fieldRow}>
@@ -455,6 +608,7 @@ export default function ExpenseDetailPage({
           </div>
         </div>
 
+        {/* ── Notes ── */}
         <div className={styles.section}>
           <h2 className={styles.sectionTitle}>Notes</h2>
           <div className={styles.field}>
@@ -469,85 +623,313 @@ export default function ExpenseDetailPage({
           </div>
         </div>
 
-        {(items.length > 0 || expense.source === 'OCR') && (
-          <div className={styles.section}>
-            <h2 className={styles.sectionTitle}>Line Items</h2>
-            {items.length > 0 && (
-              <table className={styles.itemsTable}>
-                <thead>
-                  <tr>
-                    <th className={styles.itemsTh}>Item</th>
-                    <th className={styles.itemsThNumber}>Qty</th>
-                    <th className={styles.itemsThNumber}>Unit Price</th>
-                    <th className={styles.itemsThNumber}>Line Total</th>
-                    <th className={styles.itemsTh}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item, idx) => (
-                    <tr key={idx}>
-                      <td className={styles.itemsTd}>
-                        <input
-                          type="text"
-                          className={styles.itemInput}
-                          value={item.name}
-                          onChange={e => updateItem(idx, 'name', e.target.value)}
-                          placeholder="Item name"
-                        />
-                      </td>
-                      <td className={styles.itemsTdNumber}>
-                        <input
-                          type="number"
-                          className={styles.itemInput}
-                          value={item.quantity}
-                          onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                          min="0"
-                          step="0.001"
-                          style={{ width: '5rem', textAlign: 'right' }}
-                        />
-                      </td>
-                      <td className={styles.itemsTdNumber}>
-                        <input
-                          type="number"
-                          className={styles.itemInput}
-                          value={item.unitPrice}
-                          onChange={e => updateItem(idx, 'unitPrice', e.target.value)}
-                          min="0"
-                          step="0.01"
-                          style={{ width: '6rem', textAlign: 'right' }}
-                        />
-                      </td>
-                      <td className={styles.itemsTdNumber}>
-                        ${((parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0)).toFixed(2)}
-                      </td>
-                      <td className={styles.itemsTd}>
-                        <button
-                          type="button"
-                          className={styles.removeItemButton}
-                          onClick={() => removeItem(idx)}
-                          aria-label={`Remove ${item.name}`}
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-
-            <button type="button" className={styles.addItemButton} onClick={addItem}>
-              + Add line item
+        {/* ── Line Items (US-EXP-06) ── */}
+        <div className={styles.section}>
+          <div className={styles.sectionHeader} onClick={() => setItemsExpanded(v => !v)}>
+            <h2 className={styles.sectionTitle} style={{ margin: 0 }}>Line Items</h2>
+            <button type="button" className={styles.collapseToggle} aria-label={itemsExpanded ? 'Collapse' : 'Expand'}>
+              {itemsExpanded ? '▲ Collapse' : '▼ Expand'}
             </button>
+          </div>
 
-            {showTotalMismatch && (
-              <p className={styles.totalWarning}>
-                ⚠ Line items total (${computedItemsTotal.toFixed(2)}) does not match the total amount (${parsedTotal.toFixed(2)}).
-              </p>
+          {itemsExpanded && (
+            <>
+              {items.length > 0 && (
+                <>
+                  <table className={styles.itemsTable} style={{ marginTop: '0.75rem' }}>
+                    <thead>
+                      <tr>
+                        <th className={styles.itemsTh}>Item</th>
+                        <th className={styles.itemsThNumber}>Qty</th>
+                        <th className={styles.itemsThNumber}>Unit Price</th>
+                        <th className={styles.itemsThNumber}>Line Total</th>
+                        <th className={styles.itemsTh}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item, idx) => (
+                        <tr key={idx}>
+                          <td className={styles.itemsTd}>
+                            <input
+                              type="text"
+                              className={styles.itemInput}
+                              value={item.name}
+                              onChange={e => updateItem(idx, 'name', e.target.value)}
+                              placeholder="Item name"
+                            />
+                          </td>
+                          <td className={styles.itemsTdNumber}>
+                            <input
+                              type="number"
+                              className={styles.itemInput}
+                              value={item.quantity}
+                              onChange={e => updateItem(idx, 'quantity', e.target.value)}
+                              min="0"
+                              step="0.001"
+                              style={{ width: '5rem', textAlign: 'right' }}
+                            />
+                          </td>
+                          <td className={styles.itemsTdNumber}>
+                            <input
+                              type="number"
+                              className={styles.itemInput}
+                              value={item.unitPrice}
+                              onChange={e => updateItem(idx, 'unitPrice', e.target.value)}
+                              min="0"
+                              step="0.01"
+                              style={{ width: '6rem', textAlign: 'right' }}
+                            />
+                          </td>
+                          <td className={styles.itemsTdNumber}>
+                            ${((parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0)).toFixed(2)}
+                          </td>
+                          <td className={styles.itemsTd}>
+                            <button
+                              type="button"
+                              className={styles.removeItemButton}
+                              onClick={() => removeItem(idx)}
+                              aria-label={`Remove ${item.name}`}
+                            >×</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* Running total footer */}
+                  <div className={styles.itemsFooter}>
+                    <span>Items total:</span>
+                    <span className={styles.itemsFooterTotal}>${computedItemsTotal.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
+
+              <button type="button" className={styles.addItemButton} onClick={addItem}>
+                + Add line item
+              </button>
+
+              {showTotalMismatch && (
+                <p className={styles.totalWarning}>
+                  ⚠ Line items total (${computedItemsTotal.toFixed(2)}) does not match the expense total (${parsedTotal.toFixed(2)}). Save will proceed — update either value to reconcile.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── Shared Expense (US-EXP-04) ── */}
+        <div className={styles.section}>
+          <div className={styles.sectionHeader} onClick={() => setSharesExpanded(v => !v)}>
+            <h2 className={styles.sectionTitle} style={{ margin: 0 }}>Shared Expense</h2>
+            <button type="button" className={styles.collapseToggle} aria-label={sharesExpanded ? 'Collapse' : 'Expand'}>
+              {sharesExpanded ? '▲ Collapse' : '▼ Expand'}
+            </button>
+          </div>
+
+          {sharesExpanded && (
+            <>
+              <div className={styles.sharedToggleRow} style={{ marginTop: '0.875rem' }}>
+                <label className={styles.toggleSwitch}>
+                  <input
+                    type="checkbox"
+                    checked={isShared}
+                    onChange={e => {
+                      setIsShared(e.target.checked)
+                      if (!e.target.checked) setShareRows([])
+                    }}
+                  />
+                  <span className={styles.toggleSlider} />
+                </label>
+                <span className={styles.toggleLabel}>
+                  {isShared ? 'Split this expense with household members' : 'This is a personal expense'}
+                </span>
+              </div>
+
+              {isShared && (
+                <>
+                  <div className={styles.splitTypeRow}>
+                    <label className={styles.splitTypeLabel}>
+                      <input
+                        type="radio"
+                        name="splitType"
+                        value="percentage"
+                        checked={splitType === 'percentage'}
+                        onChange={() => setSplitType('percentage')}
+                      />
+                      By percentage
+                    </label>
+                    <label className={styles.splitTypeLabel}>
+                      <input
+                        type="radio"
+                        name="splitType"
+                        value="amount"
+                        checked={splitType === 'amount'}
+                        onChange={() => setSplitType('amount')}
+                      />
+                      By amount
+                    </label>
+                  </div>
+
+                  {shareRows.length > 0 && (
+                    <table className={styles.sharesTable}>
+                      <thead>
+                        <tr>
+                          <th className={styles.sharesTh}>Member (User ID)</th>
+                          <th className={styles.sharesTh}>{splitType === 'percentage' ? '%' : '$'}</th>
+                          <th className={styles.sharesTh}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shareRows.map((row, idx) => (
+                          <tr key={idx}>
+                            <td className={styles.sharesTd}>
+                              <input
+                                type="text"
+                                className={styles.sharesInput}
+                                style={{ maxWidth: '100%', textAlign: 'left' }}
+                                value={row.userId}
+                                onChange={e => setShareRows(prev => prev.map((r, i) => i === idx ? { ...r, userId: e.target.value } : r))}
+                                placeholder="User ID"
+                              />
+                            </td>
+                            <td className={styles.sharesTd}>
+                              <input
+                                type="number"
+                                className={styles.sharesInput}
+                                value={row.value}
+                                onChange={e => updateShareRow(idx, e.target.value)}
+                                min="0"
+                                step={splitType === 'percentage' ? '0.1' : '0.01'}
+                                placeholder={splitType === 'percentage' ? '0.0' : '0.00'}
+                              />
+                            </td>
+                            <td className={styles.sharesTd}>
+                              <button type="button" className={styles.removeItemButton} onClick={() => removeShareRow(idx)}>×</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+
+                  <button type="button" className={styles.addItemButton} onClick={addShareRow} style={{ marginTop: '0.5rem' }}>
+                    + Add member
+                  </button>
+
+                  <div className={styles.sharesSumRow}>
+                    <span>Total split:</span>
+                    <span className={sharesValid() ? styles.itemsFooterTotal : styles.sharesSumBad}>
+                      {splitType === 'percentage'
+                        ? `${sharesSum().toFixed(1)}% / 100%`
+                        : `$${sharesSum().toFixed(2)} / $${parsedTotal.toFixed(2)}`}
+                    </span>
+                  </div>
+
+                  {sharesOutOfSync && (
+                    <div className={styles.sharesOutOfSyncBanner}>
+                      ⚠ The expense total changed. Update the split amounts below to match the new total, then save.
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className={styles.assignSharesButton}
+                    disabled={!sharesValid() || assigningShares || shareRows.length === 0}
+                    onClick={handleAssignShares}
+                  >
+                    {assigningShares ? 'Saving shares…' : 'Save Shares'}
+                  </button>
+
+                  {existingShares.length > 0 && (
+                    <p className={styles.detachConfirmBanner}>
+                      {existingShares.length} share{existingShares.length !== 1 ? 's' : ''} currently saved.
+                    </p>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── Receipts Gallery (US-REC-03) ── */}
+        {(receipts.length > 0 || isAdmin) && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader} onClick={() => setReceiptsExpanded(v => !v)}>
+              <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+                Receipts {receipts.length > 0 && `(${receipts.length})`}
+              </h2>
+              <button type="button" className={styles.collapseToggle} aria-label={receiptsExpanded ? 'Collapse' : 'Expand'}>
+                {receiptsExpanded ? '▲ Collapse' : '▼ Expand'}
+              </button>
+            </div>
+
+            {receiptsExpanded && (
+              <>
+                {receipts.length > 0 && (
+                  <div className={styles.receiptGallery}>
+                    {receipts.slice(0, 5).map(r => (
+                      <div key={r.id} className={styles.receiptThumbCard}>
+                        {r.thumbnailUrl ? (
+                          <img
+                            src={toAbsoluteUrl(r.thumbnailUrl)}
+                            alt="Receipt thumbnail"
+                            className={styles.receiptThumb}
+                          />
+                        ) : (
+                          <div className={styles.receiptThumbPlaceholder}>No thumbnail</div>
+                        )}
+                        {detachTarget === r.id ? (
+                          <button
+                            type="button"
+                            className={styles.receiptThumbRemove}
+                            onClick={() => void handleDetachReceipt(r.id)}
+                            title="Confirm detach"
+                          >✓</button>
+                        ) : (
+                          // Don't allow detaching the primary receipt
+                          expense.receiptId !== r.id && (
+                            <button
+                              type="button"
+                              className={styles.receiptThumbRemove}
+                              onClick={() => setDetachTarget(prev => prev === r.id ? null : r.id)}
+                              title="Detach receipt"
+                            >×</button>
+                          )
+                        )}
+                        <p className={styles.receiptThumbStatus}>{r.status}</p>
+                      </div>
+                    ))}
+                    {receipts.length > 5 && (
+                      <div className={styles.receiptThumbPlaceholder}>
+                        +{receipts.length - 5} more
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className={styles.attachReceiptSection}>
+                  <input
+                    type="text"
+                    className={styles.attachReceiptInput}
+                    value={attachReceiptId}
+                    onChange={e => setAttachReceiptId(e.target.value)}
+                    placeholder="Receipt ID to attach…"
+                  />
+                  <button
+                    type="button"
+                    className={styles.attachReceiptButton}
+                    disabled={!attachReceiptId.trim() || attaching}
+                    onClick={handleAttachReceipt}
+                  >
+                    {attaching ? 'Attaching…' : 'Attach Receipt'}
+                  </button>
+                </div>
+              </>
             )}
           </div>
         )}
 
+        {/* ── Form actions ── */}
         <div className={styles.formActions}>
           <button
             type="button"
@@ -578,6 +960,7 @@ export default function ExpenseDetailPage({
         </div>
       </form>
 
+      {/* ── Delete dialog ── */}
       {showDeleteDialog && (
         <div className={styles.dialogOverlay} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
           <div className={styles.dialog}>

@@ -49,8 +49,10 @@ export interface ApiError {
 
 export interface SessionResponse {
   userId: string
-  role: 'Owner' | 'AdultMember' | 'RestrictedMember'
+  role: 'Admin' | 'Contributor' | 'Reader'
 }
+
+// ── Expense Items ─────────────────────────────────────────────────────────────
 
 export interface ExpenseItemResponse {
   id: string
@@ -58,6 +60,39 @@ export interface ExpenseItemResponse {
   quantity: number
   unitPrice: number
 }
+
+export interface ExpenseItemsListResponse {
+  items: ExpenseItemResponse[]
+}
+
+// ── Expense Shares ────────────────────────────────────────────────────────────
+
+export interface ExpenseShareResponse {
+  id: string
+  userId: string
+  amount: number | null
+  percentage: number | null
+}
+
+export interface ExpenseShareEntryRequest {
+  userId: string
+  amount?: number
+  percentage?: number
+}
+
+export interface AssignSharesRequest {
+  shares: ExpenseShareEntryRequest[]
+}
+
+// ── Receipts ──────────────────────────────────────────────────────────────────
+
+export interface ReceiptSummaryResponse {
+  id: string
+  thumbnailUrl: string | null
+  status: string
+}
+
+// ── Expenses ──────────────────────────────────────────────────────────────────
 
 export interface ExpenseResponse {
   id: string
@@ -77,6 +112,9 @@ export interface ExpenseResponse {
   ocrStatus: string
   confidenceJson: string | null
   items: ExpenseItemResponse[]
+  isShared: boolean
+  shares: ExpenseShareResponse[]
+  receipts: ReceiptSummaryResponse[]
   createdAt: string
   updatedAt: string
 }
@@ -121,4 +159,10 @@ export interface CorrectExpenseRequest {
   tags?: string[]
   notes?: string
   items?: Array<{ id?: string; name: string; quantity: number; unitPrice: number }>
+}
+
+export interface CreateExpenseItemRequest {
+  name: string
+  quantity: number
+  unitPrice: number
 }

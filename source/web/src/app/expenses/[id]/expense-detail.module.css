@@ -520,3 +520,357 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ── Section collapse toggle ── */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.collapseToggle {
+  background: none;
+  border: none;
+  font-size: 0.8125rem;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+}
+
+.collapseToggle:hover {
+  color: #374151;
+}
+
+/* ── Line items total footer ── */
+.itemsFooter {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0;
+  font-size: 0.8125rem;
+  color: #374151;
+  border-top: 1px solid #e5e7eb;
+  margin-top: 0.375rem;
+}
+
+.itemsFooterTotal {
+  font-weight: 600;
+}
+
+/* ── Shared expense section ── */
+.sharedToggleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.toggleSwitch {
+  position: relative;
+  display: inline-block;
+  width: 2.75rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+}
+
+.toggleSwitch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggleSlider {
+  position: absolute;
+  inset: 0;
+  background: #d1d5db;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.toggleSlider::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 1.125rem;
+  height: 1.125rem;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: transform 0.15s;
+}
+
+.toggleSwitch input:checked + .toggleSlider {
+  background: #4f46e5;
+}
+
+.toggleSwitch input:checked + .toggleSlider::before {
+  transform: translateX(1.25rem);
+}
+
+.toggleLabel {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.sharedBadge {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.sharesTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  margin-top: 0.75rem;
+}
+
+.sharesTh {
+  text-align: left;
+  padding: 0.375rem 0.5rem;
+  font-weight: 500;
+  color: #6b7280;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.sharesTd {
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+
+.sharesInput {
+  width: 100%;
+  max-width: 6rem;
+  padding: 0.25rem 0.375rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  color: #111827;
+  text-align: right;
+}
+
+.sharesInput:focus {
+  outline: none;
+  border-color: #4f46e5;
+}
+
+.splitTypeRow {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.splitTypeLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: #374151;
+  cursor: pointer;
+}
+
+.sharesSumRow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: #374151;
+  margin-top: 0.375rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.sharesSumBad {
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.memberSelector {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  color: #111827;
+  background: #ffffff;
+  cursor: pointer;
+  margin-bottom: 0.5rem;
+  transition: border-color 0.15s;
+}
+
+.memberSelector:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+.assignSharesButton {
+  margin-top: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: #4f46e5;
+  color: #ffffff;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.assignSharesButton:hover:not(:disabled) {
+  background-color: #4338ca;
+}
+
+.assignSharesButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sharesOutOfSyncBanner {
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 0.375rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: #92400e;
+  margin-top: 0.75rem;
+}
+
+/* ── Receipt gallery ── */
+.receiptGallery {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.receiptGallery::-webkit-scrollbar {
+  height: 4px;
+}
+
+.receiptGallery::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 2px;
+}
+
+.receiptGallery::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+.receiptThumbCard {
+  flex-shrink: 0;
+  position: relative;
+  width: 72px;
+}
+
+.receiptThumb {
+  width: 72px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 0.375rem;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  display: block;
+}
+
+.receiptThumbPlaceholder {
+  width: 72px;
+  height: 100px;
+  border-radius: 0.375rem;
+  border: 1px solid #e5e7eb;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  color: #9ca3af;
+  text-align: center;
+  padding: 0.375rem;
+}
+
+.receiptThumbRemove {
+  position: absolute;
+  top: -0.375rem;
+  right: -0.375rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.receiptThumbRemove:hover {
+  background: #b91c1c;
+}
+
+.receiptThumbStatus {
+  font-size: 0.625rem;
+  color: #6b7280;
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+.attachReceiptSection {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.attachReceiptInput {
+  flex: 1;
+  min-width: 12rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  color: #111827;
+}
+
+.attachReceiptInput:focus {
+  outline: none;
+  border-color: #4f46e5;
+}
+
+.attachReceiptButton {
+  padding: 0.375rem 0.75rem;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.attachReceiptButton:hover {
+  background: #e5e7eb;
+}
+
+.detachConfirmBanner {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  font-style: italic;
+  margin-top: 0.375rem;
+}

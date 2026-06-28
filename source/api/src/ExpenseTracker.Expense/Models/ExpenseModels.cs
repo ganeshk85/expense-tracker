@@ -1,5 +1,25 @@
 namespace ExpenseTracker.Expense.Models;
 
+// ── Item models ─────────────────────────────────────────────────────────────
+
+public sealed record CreateExpenseItemRequest(string Name, decimal Quantity, decimal UnitPrice);
+
+public sealed record ExpenseItemsListResponse(IReadOnlyList<ExpenseItemResponse> Items);
+
+// ── Share models ─────────────────────────────────────────────────────────────
+
+public sealed record ExpenseShareEntryRequest(Guid UserId, decimal? Amount, decimal? Percentage);
+
+public sealed record AssignSharesRequest(IReadOnlyList<ExpenseShareEntryRequest> Shares);
+
+public sealed record ExpenseShareResponse(Guid Id, Guid UserId, decimal? Amount, decimal? Percentage);
+
+// ── Receipt summary ──────────────────────────────────────────────────────────
+
+public sealed record ReceiptSummaryResponse(Guid Id, string? ThumbnailUrl, string Status);
+
+// ── Expense CRUD ─────────────────────────────────────────────────────────────
+
 public sealed record CreateExpenseRequest(
     string? MerchantName,
     DateTimeOffset? Date,
@@ -62,6 +82,9 @@ public sealed record ExpenseResponse(
     string OcrStatus,
     string? ConfidenceJson,
     IReadOnlyList<ExpenseItemResponse> Items,
+    bool IsShared,
+    IReadOnlyList<ExpenseShareResponse> Shares,
+    IReadOnlyList<ReceiptSummaryResponse> Receipts,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 

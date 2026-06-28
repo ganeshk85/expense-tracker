@@ -1,7 +1,11 @@
 import { apiClient } from './client'
 import type {
+  AssignSharesRequest,
+  CreateExpenseItemRequest,
   CreateExpenseRequest,
   CorrectExpenseRequest,
+  ExpenseItemResponse,
+  ExpenseItemsListResponse,
   ExpenseListResponse,
   ExpenseResponse,
   SessionResponse,
@@ -43,4 +47,48 @@ export function correctExpense(id: string, body: CorrectExpenseRequest): Promise
 
 export function deleteExpense(id: string): Promise<void> {
   return apiClient.del<void>(`/expenses/${id}`)
+}
+
+// ── Item CRUD ─────────────────────────────────────────────────────────────────
+
+export function getExpenseItems(expenseId: string): Promise<ExpenseItemsListResponse> {
+  return apiClient.get<ExpenseItemsListResponse>(`/expenses/${expenseId}/items`)
+}
+
+export function addExpenseItem(
+  expenseId: string,
+  body: CreateExpenseItemRequest
+): Promise<ExpenseItemResponse> {
+  return apiClient.post<ExpenseItemResponse>(`/expenses/${expenseId}/items`, body)
+}
+
+export function updateExpenseItem(
+  expenseId: string,
+  itemId: string,
+  body: CreateExpenseItemRequest
+): Promise<ExpenseItemResponse> {
+  return apiClient.put<ExpenseItemResponse>(`/expenses/${expenseId}/items/${itemId}`, body)
+}
+
+export function deleteExpenseItem(expenseId: string, itemId: string): Promise<void> {
+  return apiClient.del<void>(`/expenses/${expenseId}/items/${itemId}`)
+}
+
+// ── Shared Expenses ───────────────────────────────────────────────────────────
+
+export function assignShares(
+  expenseId: string,
+  body: AssignSharesRequest
+): Promise<ExpenseResponse> {
+  return apiClient.post<ExpenseResponse>(`/expenses/${expenseId}/shares`, body)
+}
+
+// ── Receipt Attachment ────────────────────────────────────────────────────────
+
+export function attachReceipt(expenseId: string, receiptId: string): Promise<ExpenseResponse> {
+  return apiClient.post<ExpenseResponse>(`/expenses/${expenseId}/receipts/${receiptId}`, {})
+}
+
+export function detachReceipt(expenseId: string, receiptId: string): Promise<void> {
+  return apiClient.del<void>(`/expenses/${expenseId}/receipts/${receiptId}`)
 }

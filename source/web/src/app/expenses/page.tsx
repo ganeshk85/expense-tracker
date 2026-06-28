@@ -47,7 +47,7 @@ export default function ExpensesPage() {
   const [deleteState, setDeleteState] = useState<DeleteState>(null)
   const [deleting, setDeleting] = useState(false)
 
-  const isOwner = session?.role === 'Owner'
+  const isAdmin = session?.role === 'Admin'
 
   async function loadSession() {
     try {
@@ -62,7 +62,7 @@ export default function ExpensesPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await getExpenses({ allHousehold: allHousehold && isOwner })
+      const res = await getExpenses({ allHousehold: allHousehold && isAdmin })
       setExpenses(res.items)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load expenses.')
@@ -79,7 +79,7 @@ export default function ExpensesPage() {
   useEffect(() => {
     void loadExpenses()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allHousehold, isOwner])
+  }, [allHousehold, isAdmin])
 
   async function handleDelete(id: string) {
     setDeleting(true)
@@ -106,7 +106,7 @@ export default function ExpensesPage() {
       <div className={styles.header}>
         <h1 className={styles.pageTitle}>Expenses</h1>
         <div className={styles.headerActions}>
-          {isOwner && (
+          {isAdmin && (
             <div className={styles.toggleGroup} role="group" aria-label="View scope">
               <button
                 className={`${styles.toggleBtn} ${!allHousehold ? styles.toggleBtnActive : ''}`}
@@ -154,7 +154,12 @@ export default function ExpensesPage() {
                   onClick={e => handleRowClick(e, expense.id)}
                 >
                   <td className={styles.td}>
-                    {expense.merchantName ?? <span className={styles.tdMuted}>—</span>}
+                    <span className={styles.merchantCell}>
+                      {expense.merchantName ?? <span className={styles.tdMuted}>—</span>}
+                      {expense.isShared && (
+                        <span className={`${styles.badge} ${styles.sharedBadge}`}>Shared</span>
+                      )}
+                    </span>
                   </td>
                   <td className={styles.td}>{formatDate(expense.date)}</td>
                   <td className={`${styles.td} ${styles.total}`}>

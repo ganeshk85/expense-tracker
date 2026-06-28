@@ -12,6 +12,9 @@ public sealed class Receipt : BaseEntity
     public string? ThumbnailPath { get; set; }
     public ReceiptStatus Status { get; set; } = ReceiptStatus.Uploaded;
     public int OcrRetryCount { get; set; } = 0;
+
+    /// <summary>Set when a receipt is attached to an expense. Null for unattached receipts.</summary>
+    public Guid? ExpenseId { get; set; }
 }
 
 public enum ReceiptStatus

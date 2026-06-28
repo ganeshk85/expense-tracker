@@ -3,6 +3,7 @@ using ExpenseTracker.Auth.Entities;
 using Microsoft.EntityFrameworkCore;
 using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
 using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
+using ExpenseShareEntity = ExpenseTracker.Ocr.Entities.ExpenseShare;
 using ReceiptEntity = ExpenseTracker.Receipt.Entities.Receipt;
 
 namespace ExpenseTracker.Api.Data;
@@ -15,6 +16,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ExpenseEntity> Expenses => Set<ExpenseEntity>();
     public DbSet<ExpenseItemEntity> ExpenseItems => Set<ExpenseItemEntity>();
+    public DbSet<ExpenseShareEntity> ExpenseShares => Set<ExpenseShareEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,6 +41,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.ToTable("receipts");
             e.HasKey(r => r.Id);
             e.Property(r => r.Status).HasConversion<string>();
+            // ExpenseId links a receipt to an expense for multi-receipt support.
+            // Stored as a plain column; no FK constraint to avoid circular reference with expenses.ReceiptId.
+            e.Property(r => r.ExpenseId);
+            e.HasIndex(r => r.ExpenseId);
         });
 
         modelBuilder.Entity<AuditLog>(e =>
@@ -92,6 +98,21 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(i => i.Quantity).HasColumnType("numeric(18,4)");
             e.Property(i => i.UnitPrice).HasColumnType("numeric(18,4)");
             e.Property(i => i.CreatedAt).HasDefaultValueSql("now()");
+        });
+
+        modelBuilder.Entity<ExpenseShareEntity>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.ToTable("expense_shares");
+            e.Property(s => s.Amount).HasColumnType("numeric(18,4)");
+            e.Property(s => s.Percentage).HasColumnType("numeric(5,2)");
+            e.Property(s => s.CreatedAt).HasDefaultValueSql("now()");
+            e.HasOne<ExpenseEntity>()
+             .WithMany(x => x.Shares)
+             .HasForeignKey(s => s.ExpenseId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => s.ExpenseId);
+            e.HasIndex(s => s.UserId);
         });
     }
 }

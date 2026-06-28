@@ -7,6 +7,8 @@ using ExpenseTracker.Shared.Exceptions;
 using Microsoft.Extensions.Logging;
 using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
 using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
+using ExpenseShareEntity = ExpenseTracker.Ocr.Entities.ExpenseShare;
+using ReceiptEntity = ExpenseTracker.Receipt.Entities.Receipt;
 
 namespace ExpenseTracker.Expense.Services;
 
@@ -16,6 +18,9 @@ public sealed class ExpenseService(
     ILogger<ExpenseService> logger) : IExpenseService
 {
     private const string AdminRole = "Admin";
+    private const string ContributorRole = "Contributor";
+
+    // ── Expense CRUD ─────────────────────────────────────────────────────────
 
     public async Task<ExpenseResponse> CreateManualAsync(
         CreateExpenseRequest request, Guid userId, CancellationToken ct = default)
@@ -47,7 +52,7 @@ public sealed class ExpenseService(
         await repo.SaveChangesAsync(ct);
 
         logger.LogInformation("Manual expense {Id} created for user {UserId}", expense.Id, userId);
-        return ToResponse(expense);
+        return await BuildResponseAsync(expense, ct);
     }
 
     public async Task<ExpenseListResponse> ListAsync(
@@ -55,11 +60,15 @@ public sealed class ExpenseService(
         int page, int pageSize, CancellationToken ct = default)
     {
         Guid? filterUserId = (allHousehold && userRole == AdminRole) ? null : userId;
+        string? filterRole = filterUserId.HasValue ? userRole : null;
 
-        var (items, total) = await repo.ListAsync(filterUserId, page, pageSize, ct);
-        return new ExpenseListResponse(
-            items.Select(ToResponse).ToList().AsReadOnly(),
-            total, page, pageSize);
+        var (items, total) = await repo.ListAsync(filterUserId, filterRole, page, pageSize, ct);
+
+        var responses = new List<ExpenseResponse>(items.Count);
+        foreach (var e in items)
+            responses.Add(await BuildResponseAsync(e, ct));
+
+        return new ExpenseListResponse(responses.AsReadOnly(), total, page, pageSize);
     }
 
     public async Task<ExpenseResponse> GetByIdAsync(
@@ -69,7 +78,7 @@ public sealed class ExpenseService(
             ?? throw new NotFoundException("Expense", id);
 
         EnforceOwnership(expense, userId, userRole);
-        return ToResponse(expense);
+        return await BuildResponseAsync(expense, ct);
     }
 
     public async Task<ExpenseResponse> UpdateAsync(
@@ -90,6 +99,15 @@ public sealed class ExpenseService(
 
         EnforceOwnership(expense, userId, userRole);
 
+        // If total changed and shares exist, signal the FE to re-split.
+        if (request.Total.HasValue &&
+            expense.Total != request.Total &&
+            expense.IsShared &&
+            expense.Shares.Count > 0)
+        {
+            throw new ConflictException("shares_out_of_sync");
+        }
+
         expense.MerchantName = request.MerchantName;
         expense.MerchantAddress = request.MerchantAddress;
         expense.Date = request.Date;
@@ -108,7 +126,7 @@ public sealed class ExpenseService(
         await repo.SaveChangesAsync(ct);
 
         logger.LogInformation("Expense {Id} updated by user {UserId}", id, userId);
-        return ToResponse(expense);
+        return await BuildResponseAsync(expense, ct);
     }
 
     public async Task DeleteAsync(
@@ -119,7 +137,7 @@ public sealed class ExpenseService(
 
         EnforceOwnership(expense, userId, userRole);
 
-        var beforeJson = JsonSerializer.Serialize(ToResponse(expense));
+        var beforeJson = JsonSerializer.Serialize(await BuildResponseAsync(expense, ct));
 
         await repo.DeleteAsync(expense, ct);
         await repo.SaveChangesAsync(ct);
@@ -154,7 +172,7 @@ public sealed class ExpenseService(
 
         EnforceOwnership(expense, userId, userRole);
 
-        var beforeJson = JsonSerializer.Serialize(ToResponse(expense));
+        var beforeJson = JsonSerializer.Serialize(await BuildResponseAsync(expense, ct));
 
         if (request.MerchantName is not null)
             expense.MerchantName = request.MerchantName;
@@ -181,7 +199,7 @@ public sealed class ExpenseService(
 
         await repo.SaveChangesAsync(ct);
 
-        var afterJson = JsonSerializer.Serialize(ToResponse(expense));
+        var afterJson = JsonSerializer.Serialize(await BuildResponseAsync(expense, ct));
 
         await auditService.LogAsync(new WriteAuditLogRequest(
             UserId: userId,
@@ -193,15 +211,214 @@ public sealed class ExpenseService(
             IpAddress: ipAddress), ct);
 
         logger.LogInformation("Expense {Id} corrections applied by user {UserId}", id, userId);
-        return ToResponse(expense);
+        return await BuildResponseAsync(expense, ct);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────────
+    // ── Item CRUD ────────────────────────────────────────────────────────────
+
+    public async Task<ExpenseItemsListResponse> GetItemsAsync(
+        Guid expenseId, Guid userId, string userRole, CancellationToken ct = default)
+    {
+        var expense = await repo.FindByIdAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+
+        EnforceOwnership(expense, userId, userRole);
+
+        var items = await repo.GetItemsByExpenseIdAsync(expenseId, ct);
+        return new ExpenseItemsListResponse(
+            items.Select(i => new ExpenseItemResponse(i.Id, i.Name, i.Quantity, i.UnitPrice))
+                 .ToList()
+                 .AsReadOnly());
+    }
+
+    public async Task<ExpenseItemResponse> AddItemAsync(
+        Guid expenseId, CreateExpenseItemRequest request,
+        Guid userId, string userRole, CancellationToken ct = default)
+    {
+        ValidateItemRequest(request.Name, request.Quantity, request.UnitPrice);
+
+        var expense = await repo.FindByIdAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+
+        EnforceOwnership(expense, userId, userRole);
+
+        var item = new ExpenseItemEntity
+        {
+            ExpenseId = expenseId,
+            Name = request.Name.Trim(),
+            Quantity = request.Quantity,
+            UnitPrice = request.UnitPrice,
+        };
+
+        await repo.AddItemAsync(item, ct);
+        await repo.SaveChangesAsync(ct);
+
+        logger.LogInformation("Item {ItemId} added to expense {ExpenseId} by user {UserId}",
+            item.Id, expenseId, userId);
+
+        return new ExpenseItemResponse(item.Id, item.Name, item.Quantity, item.UnitPrice);
+    }
+
+    public async Task<ExpenseItemResponse> UpdateItemAsync(
+        Guid expenseId, Guid itemId, CreateExpenseItemRequest request,
+        Guid userId, string userRole, CancellationToken ct = default)
+    {
+        ValidateItemRequest(request.Name, request.Quantity, request.UnitPrice);
+
+        var expense = await repo.FindByIdAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+
+        EnforceOwnership(expense, userId, userRole);
+
+        var item = await repo.FindItemByIdTrackedAsync(itemId, expenseId, ct)
+            ?? throw new NotFoundException("ExpenseItem", itemId);
+
+        item.Name = request.Name.Trim();
+        item.Quantity = request.Quantity;
+        item.UnitPrice = request.UnitPrice;
+
+        await repo.SaveChangesAsync(ct);
+
+        logger.LogInformation("Item {ItemId} on expense {ExpenseId} updated by user {UserId}",
+            itemId, expenseId, userId);
+
+        return new ExpenseItemResponse(item.Id, item.Name, item.Quantity, item.UnitPrice);
+    }
+
+    public async Task DeleteItemAsync(
+        Guid expenseId, Guid itemId, Guid userId, string userRole, CancellationToken ct = default)
+    {
+        var expense = await repo.FindByIdAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+
+        EnforceOwnership(expense, userId, userRole);
+
+        var item = await repo.FindItemByIdTrackedAsync(itemId, expenseId, ct)
+            ?? throw new NotFoundException("ExpenseItem", itemId);
+
+        await repo.RemoveItemAsync(item, ct);
+        await repo.SaveChangesAsync(ct);
+
+        logger.LogInformation("Item {ItemId} deleted from expense {ExpenseId} by user {UserId}",
+            itemId, expenseId, userId);
+    }
+
+    // ── Shared Expenses ──────────────────────────────────────────────────────
+
+    public async Task<ExpenseResponse> AssignSharesAsync(
+        Guid expenseId, AssignSharesRequest request,
+        Guid userId, string userRole, CancellationToken ct = default)
+    {
+        if (request.Shares.Count == 0)
+            throw new ValidationException("At least one share must be provided.");
+
+        var expense = await repo.FindByIdTrackedAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+
+        EnforceOwnership(expense, userId, userRole);
+
+        // Validate: all entries use the same split type (all amounts or all percentages).
+        bool allAmounts = request.Shares.All(s => s.Amount.HasValue);
+        bool allPercentages = request.Shares.All(s => s.Percentage.HasValue);
+
+        if (!allAmounts && !allPercentages)
+            throw new ValidationException("All shares must specify either amount or percentage — not a mix.");
+
+        if (allAmounts)
+        {
+            var total = request.Shares.Sum(s => s.Amount!.Value);
+            if (Math.Abs(total - (expense.Total ?? 0)) > 0.01m)
+                throw new ValidationException($"Share amounts ({total:F2}) must sum to the expense total ({expense.Total:F2}).");
+        }
+        else
+        {
+            var totalPct = request.Shares.Sum(s => s.Percentage!.Value);
+            if (Math.Abs(totalPct - 100m) > 0.01m)
+                throw new ValidationException($"Share percentages must sum to 100 (got {totalPct:F2}).");
+        }
+
+        var shares = request.Shares.Select(s => new ExpenseShareEntity
+        {
+            ExpenseId = expenseId,
+            UserId = s.UserId,
+            Amount = s.Amount,
+            Percentage = s.Percentage,
+        }).ToList();
+
+        await repo.ReplaceSharesAsync(expenseId, shares, ct);
+
+        expense.IsShared = true;
+        expense.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await repo.SaveChangesAsync(ct);
+
+        logger.LogInformation("Expense {ExpenseId} shares assigned by user {UserId}", expenseId, userId);
+        return await BuildResponseAsync(expense, ct);
+    }
+
+    // ── Receipt Attachment ───────────────────────────────────────────────────
+
+    public async Task<ExpenseResponse> AttachReceiptAsync(
+        Guid expenseId, Guid receiptId, Guid userId, string userRole, CancellationToken ct = default)
+    {
+        var expense = await repo.FindByIdAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+
+        EnforceOwnership(expense, userId, userRole);
+
+        var receipt = await repo.FindReceiptByIdTrackedAsync(receiptId, ct)
+            ?? throw new NotFoundException("Receipt", receiptId);
+
+        if (receipt.UploadedByUserId != userId && userRole != AdminRole)
+            throw new ForbiddenException("You can only attach receipts you uploaded.");
+
+        if (receipt.ExpenseId.HasValue && receipt.ExpenseId != expenseId)
+            throw new ConflictException("Receipt is already attached to a different expense.");
+
+        receipt.ExpenseId = expenseId;
+        await repo.SaveChangesAsync(ct);
+
+        logger.LogInformation("Receipt {ReceiptId} attached to expense {ExpenseId} by user {UserId}",
+            receiptId, expenseId, userId);
+
+        return await BuildResponseAsync(expense, ct);
+    }
+
+    public async Task DetachReceiptAsync(
+        Guid expenseId, Guid receiptId, Guid userId, string userRole, CancellationToken ct = default)
+    {
+        var expense = await repo.FindByIdAsync(expenseId, ct)
+            ?? throw new NotFoundException("Expense", expenseId);
+
+        EnforceOwnership(expense, userId, userRole);
+
+        // Prevent detaching the primary OCR receipt.
+        if (expense.ReceiptId == receiptId)
+            throw new ValidationException("Cannot detach the primary receipt. Delete the expense instead.");
+
+        var receipt = await repo.FindReceiptByIdTrackedAsync(receiptId, ct)
+            ?? throw new NotFoundException("Receipt", receiptId);
+
+        if (receipt.ExpenseId != expenseId)
+            throw new ValidationException("Receipt is not attached to this expense.");
+
+        receipt.ExpenseId = null;
+        await repo.SaveChangesAsync(ct);
+
+        logger.LogInformation("Receipt {ReceiptId} detached from expense {ExpenseId} by user {UserId}",
+            receiptId, expenseId, userId);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static void EnforceOwnership(ExpenseEntity expense, Guid userId, string userRole)
     {
-        if (userRole != AdminRole && expense.UserId != userId)
-            throw new ForbiddenException("You do not have access to this expense.");
+        if (userRole == AdminRole) return;
+        if (expense.UserId == userId) return;
+        // Contributor can access a shared expense they are a participant of.
+        if (userRole == ContributorRole && expense.IsShared &&
+            expense.Shares.Any(s => s.UserId == userId)) return;
+        throw new ForbiddenException("You do not have access to this expense.");
     }
 
     private static void ReplaceItems(
@@ -219,7 +436,23 @@ public sealed class ExpenseService(
             .ToList();
     }
 
-    private static ExpenseResponse ToResponse(ExpenseEntity e) => new(
+    private static void ValidateItemRequest(string name, decimal quantity, decimal unitPrice)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ValidationException("Item name is required.");
+        if (quantity <= 0)
+            throw new ValidationException("Item quantity must be greater than zero.");
+        if (unitPrice < 0)
+            throw new ValidationException("Item unit price cannot be negative.");
+    }
+
+    private async Task<ExpenseResponse> BuildResponseAsync(ExpenseEntity e, CancellationToken ct)
+    {
+        var receipts = await repo.GetReceiptsByExpenseIdAsync(e.Id, ct);
+        return ToResponse(e, receipts);
+    }
+
+    private static ExpenseResponse ToResponse(ExpenseEntity e, IReadOnlyList<ReceiptEntity> receipts) => new(
         e.Id,
         e.ReceiptId,
         e.UserId,
@@ -239,6 +472,16 @@ public sealed class ExpenseService(
         e.Items.Select(i => new ExpenseItemResponse(i.Id, i.Name, i.Quantity, i.UnitPrice))
                .ToList()
                .AsReadOnly(),
+        e.IsShared,
+        e.Shares.Select(s => new ExpenseShareResponse(s.Id, s.UserId, s.Amount, s.Percentage))
+                .ToList()
+                .AsReadOnly(),
+        receipts.Select(r => new ReceiptSummaryResponse(
+            r.Id,
+            r.ThumbnailPath is not null ? $"/receipts/{r.Id}/thumbnail" : null,
+            r.Status.ToString()))
+            .ToList()
+            .AsReadOnly(),
         e.CreatedAt,
         e.UpdatedAt);
 }

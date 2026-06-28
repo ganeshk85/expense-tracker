@@ -1,9 +1,14 @@
 using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
+using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
+using ExpenseShareEntity = ExpenseTracker.Ocr.Entities.ExpenseShare;
+using ReceiptEntity = ExpenseTracker.Receipt.Entities.Receipt;
 
 namespace ExpenseTracker.Expense.Repositories;
 
 public interface IExpenseManagementRepository
 {
+    // ── Expense ──────────────────────────────────────────────────────────────
+
     /// <summary>Read-only lookup (AsNoTracking). Use for GET responses only.</summary>
     Task<ExpenseEntity?> FindByIdAsync(Guid id, CancellationToken ct = default);
 
@@ -11,10 +16,34 @@ public interface IExpenseManagementRepository
     Task<ExpenseEntity?> FindByIdTrackedAsync(Guid id, CancellationToken ct = default);
 
     /// <param name="userId">When null, returns expenses for all users (Owner view).</param>
+    /// <param name="userRole">Used to filter shared expenses for Contributor role.</param>
     Task<(IReadOnlyList<ExpenseEntity> Items, int Total)> ListAsync(
-        Guid? userId, int page, int pageSize, CancellationToken ct = default);
+        Guid? userId, string? userRole, int page, int pageSize, CancellationToken ct = default);
 
     Task AddAsync(ExpenseEntity expense, CancellationToken ct = default);
     Task DeleteAsync(ExpenseEntity expense, CancellationToken ct = default);
+
+    // ── Expense Items ────────────────────────────────────────────────────────
+
+    Task<IReadOnlyList<ExpenseItemEntity>> GetItemsByExpenseIdAsync(Guid expenseId, CancellationToken ct = default);
+
+    Task<ExpenseItemEntity?> FindItemByIdTrackedAsync(Guid itemId, Guid expenseId, CancellationToken ct = default);
+
+    Task AddItemAsync(ExpenseItemEntity item, CancellationToken ct = default);
+
+    Task RemoveItemAsync(ExpenseItemEntity item, CancellationToken ct = default);
+
+    // ── Expense Shares ───────────────────────────────────────────────────────
+
+    Task ReplaceSharesAsync(Guid expenseId, IReadOnlyList<ExpenseShareEntity> shares, CancellationToken ct = default);
+
+    // ── Receipts (for expense gallery) ──────────────────────────────────────
+
+    Task<IReadOnlyList<ReceiptEntity>> GetReceiptsByExpenseIdAsync(Guid expenseId, CancellationToken ct = default);
+
+    Task<ReceiptEntity?> FindReceiptByIdTrackedAsync(Guid receiptId, CancellationToken ct = default);
+
+    // ── Shared ───────────────────────────────────────────────────────────────
+
     Task SaveChangesAsync(CancellationToken ct = default);
 }

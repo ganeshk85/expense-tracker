@@ -43,6 +43,9 @@ public sealed class Expense
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public List<ExpenseItem> Items { get; set; } = [];
+
+    public bool IsShared { get; set; } = false;
+    public List<ExpenseShare> Shares { get; set; } = [];
 }
 
 public static class OcrStatusValue
