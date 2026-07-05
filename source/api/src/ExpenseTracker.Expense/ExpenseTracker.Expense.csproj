@@ -5,6 +5,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="2.8.0" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\ExpenseTracker.Ocr\ExpenseTracker.Ocr.csproj" />
     <ProjectReference Include="..\ExpenseTracker.Audit\ExpenseTracker.Audit.csproj" />
     <ProjectReference Include="..\ExpenseTracker.Shared\ExpenseTracker.Shared.csproj" />

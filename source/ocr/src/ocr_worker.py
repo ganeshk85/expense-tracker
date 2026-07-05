@@ -36,6 +36,7 @@ from PIL import Image
 from pytesseract import Output
 
 from .config import Settings
+from .merchant_normalizer import normalize_merchant
 
 logger = logging.getLogger(__name__)
 
@@ -247,10 +248,13 @@ class OcrWorker:
 
         barcode_data, barcode_type = barcode
 
+        merchant_name_normalized = normalize_merchant(merchant_name)
+
         return {
             "receiptId": receipt_id,
             "status": "complete",
             "merchantName": merchant_name,
+            "merchantNameNormalized": merchant_name_normalized,
             "merchantAddress": None,  # Address heuristics are Sprint 3 ML work.
             "date": date_str,
             "time": time_str,

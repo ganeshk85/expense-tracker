@@ -3,9 +3,11 @@ using ExpenseTracker.Audit.Models;
 using ExpenseTracker.Audit.Services;
 using ExpenseTracker.Expense.Models;
 using ExpenseTracker.Expense.Repositories;
+using ExpenseTracker.Shared;
 using ExpenseTracker.Shared.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using ExpenseAttachmentEntity = ExpenseTracker.Ocr.Entities.ExpenseAttachment;
 using ExpenseEntity = ExpenseTracker.Ocr.Entities.Expense;
 using ExpenseItemEntity = ExpenseTracker.Ocr.Entities.ExpenseItem;
@@ -18,10 +20,18 @@ public sealed class ExpenseService(
     IExpenseManagementRepository repo,
     IAuditService auditService,
     ILogger<ExpenseService> logger,
-    Microsoft.Extensions.Options.IOptions<AttachmentStorageOptions> attachmentOptions) : IExpenseService
+    Microsoft.Extensions.Options.IOptions<AttachmentStorageOptions> attachmentOptions,
+    IIntelligenceService intelligenceService,
+    IIntelligenceRepository intelligenceRepo,
+    IConnectionMultiplexer redis) : IExpenseService
 {
     private const string AdminRole = "Admin";
     private const string ContributorRole = "Contributor";
+
+    private static readonly JsonSerializerOptions EventJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     // ── Expense CRUD ─────────────────────────────────────────────────────────
 
@@ -55,7 +65,30 @@ public sealed class ExpenseService(
         await repo.SaveChangesAsync(ct);
 
         logger.LogInformation("Manual expense {Id} created for user {UserId}", expense.Id, userId);
-        return await BuildResponseAsync(expense, ct);
+
+        var response = await BuildResponseAsync(expense, ct);
+
+        // Non-blocking duplicate check — does not prevent the save.
+        try
+        {
+            var householdId = await intelligenceRepo.GetHouseholdIdForUserAsync(userId, ct);
+            var warning = await intelligenceService.CheckDuplicateAsync(
+                householdId,
+                request.MerchantName,
+                request.Total,
+                request.Date,
+                expense.Id,
+                ct);
+
+            if (warning is not null)
+                response = response with { DuplicateWarning = warning };
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Duplicate check failed for expense {Id} — continuing without warning", expense.Id);
+        }
+
+        return response;
     }
 
     public async Task<ExpenseListResponse> ListAsync(
@@ -81,7 +114,30 @@ public sealed class ExpenseService(
             ?? throw new NotFoundException("Expense", id);
 
         EnforceOwnership(expense, userId, userRole);
-        return await BuildResponseAsync(expense, ct);
+
+        var response = await BuildResponseAsync(expense, ct);
+
+        // Attach duplicate warning on load so the FE shows it again if not dismissed.
+        try
+        {
+            var householdId = await intelligenceRepo.GetHouseholdIdForUserAsync(userId, ct);
+            var warning = await intelligenceService.CheckDuplicateAsync(
+                householdId,
+                expense.MerchantName,
+                expense.Total,
+                expense.Date,
+                expense.Id,
+                ct);
+
+            if (warning is not null)
+                response = response with { DuplicateWarning = warning };
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Duplicate check failed on GET for expense {Id}", id);
+        }
+
+        return response;
     }
 
     public async Task<ExpenseResponse> UpdateAsync(
@@ -175,6 +231,12 @@ public sealed class ExpenseService(
 
         EnforceOwnership(expense, userId, userRole);
 
+        // Capture original OCR values before mutation for correction event tracking.
+        var ocrMerchant = expense.MerchantName;
+        var ocrTotal = expense.Total;
+        var ocrDate = expense.Date;
+        var ocrCategory = expense.Category;
+
         var beforeJson = JsonSerializer.Serialize(await BuildResponseAsync(expense, ct));
 
         if (request.MerchantName is not null)
@@ -212,6 +274,45 @@ public sealed class ExpenseService(
             BeforeJson: beforeJson,
             AfterJson: afterJson,
             IpAddress: ipAddress), ct);
+
+        // Emit ocr.correction events for each field that was changed from the OCR value.
+        // OCR corrections only apply to receipt-based expenses.
+        if (expense.ReceiptId.HasValue)
+        {
+            var receiptId = expense.ReceiptId.Value.ToString();
+            var merchantNorm = MerchantNormalizer.Normalize(ocrMerchant ?? expense.MerchantName ?? string.Empty);
+            var db = redis.GetDatabase();
+
+            await EmitCorrectionIfChangedAsync(db, receiptId, merchantNorm, "merchantName",
+                ocrMerchant, expense.MerchantName, ct);
+            await EmitCorrectionIfChangedAsync(db, receiptId, merchantNorm, "total",
+                ocrTotal?.ToString(), expense.Total?.ToString(), ct);
+            await EmitCorrectionIfChangedAsync(db, receiptId, merchantNorm, "date",
+                ocrDate?.ToString("O"), expense.Date?.ToString("O"), ct);
+            await EmitCorrectionIfChangedAsync(db, receiptId, merchantNorm, "category",
+                ocrCategory, expense.Category, ct);
+        }
+
+        // Emit expense.confirmed so the intelligence module can learn from this correction.
+        try
+        {
+            var householdId = await intelligenceRepo.GetHouseholdIdForUserAsync(userId, ct);
+            var confirmedPayload = JsonSerializer.Serialize(new
+            {
+                HouseholdId = householdId,
+                MerchantName = expense.MerchantName,
+                Category = expense.Category,
+                Tags = expense.Tags,
+            }, EventJsonOptions);
+
+            await redis.GetDatabase().StreamAddAsync(
+                "expense.confirmed",
+                [new NameValueEntry("payload", confirmedPayload)]);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to emit expense.confirmed for expense {Id}", id);
+        }
 
         logger.LogInformation("Expense {Id} corrections applied by user {UserId}", id, userId);
         return await BuildResponseAsync(expense, ct);
@@ -580,6 +681,40 @@ public sealed class ExpenseService(
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private async Task EmitCorrectionIfChangedAsync(
+        IDatabase db,
+        string receiptId,
+        string merchantNorm,
+        string fieldName,
+        string? ocrValue,
+        string? correctedValue,
+        CancellationToken ct)
+    {
+        if (string.Equals(ocrValue, correctedValue, StringComparison.Ordinal))
+            return;
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                ReceiptId = receiptId,
+                MerchantNormalized = merchantNorm,
+                Field = fieldName,
+                OcrValue = ocrValue,
+                CorrectedValue = correctedValue,
+            }, EventJsonOptions);
+
+            await db.StreamAddAsync(
+                "ocr.correction",
+                [new NameValueEntry("payload", payload)]);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Failed to emit ocr.correction for receipt {ReceiptId} field {Field}", receiptId, fieldName);
+        }
+    }
 
     private async Task<ExpenseResponse> BuildResponseAsync(ExpenseEntity e, CancellationToken ct)
     {

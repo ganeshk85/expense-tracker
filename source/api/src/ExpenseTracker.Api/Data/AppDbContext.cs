@@ -1,5 +1,6 @@
 using ExpenseTracker.Audit.Entities;
 using ExpenseTracker.Auth.Entities;
+using ExpenseTracker.Expense.Entities;
 using Microsoft.EntityFrameworkCore;
 using BudgetEntity = ExpenseTracker.Budget.Entities.Budget;
 using BudgetHistoryEntity = ExpenseTracker.Budget.Entities.BudgetHistory;
@@ -25,6 +26,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<BudgetEntity> Budgets => Set<BudgetEntity>();
     public DbSet<NotificationEntity> Notifications => Set<NotificationEntity>();
     public DbSet<BudgetHistoryEntity> BudgetHistories => Set<BudgetHistoryEntity>();
+
+    // Intelligence entities
+    public DbSet<MerchantCategoryMap> MerchantCategoryMaps => Set<MerchantCategoryMap>();
+    public DbSet<DuplicateDismissal> DuplicateDismissals => Set<DuplicateDismissal>();
+    public DbSet<MerchantTagHistory> MerchantTagHistories => Set<MerchantTagHistory>();
+    public DbSet<OcrFieldAccuracy> OcrFieldAccuracies => Set<OcrFieldAccuracy>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -176,6 +183,46 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(h => h.CreatedAt).HasDefaultValueSql("now()");
             // Prevent duplicate snapshots for the same budget+month.
             e.HasIndex(h => new { h.BudgetId, h.Month }).IsUnique();
+        });
+
+        modelBuilder.Entity<MerchantCategoryMap>(e =>
+        {
+            e.HasKey(m => m.Id);
+            e.ToTable("merchant_category_map");
+            e.Property(m => m.MerchantNameNormalized).HasMaxLength(512).IsRequired();
+            e.Property(m => m.Category).HasMaxLength(64).IsRequired();
+            e.Property(m => m.CreatedAt).HasDefaultValueSql("now()");
+            // One category per (household, merchant) — new confirmations update the existing row.
+            e.HasIndex(m => new { m.HouseholdId, m.MerchantNameNormalized }).IsUnique();
+        });
+
+        modelBuilder.Entity<DuplicateDismissal>(e =>
+        {
+            e.HasKey(d => d.Id);
+            e.ToTable("duplicate_dismissals");
+            e.Property(d => d.DismissedAt).HasDefaultValueSql("now()");
+            // Each expense can only be dismissed once.
+            e.HasIndex(d => d.ExpenseId).IsUnique();
+        });
+
+        modelBuilder.Entity<MerchantTagHistory>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.ToTable("merchant_tag_history");
+            e.Property(t => t.MerchantNameNormalized).HasMaxLength(512).IsRequired();
+            e.Property(t => t.Tag).HasMaxLength(128).IsRequired();
+            // One row per (household, merchant, tag).
+            e.HasIndex(t => new { t.HouseholdId, t.MerchantNameNormalized, t.Tag }).IsUnique();
+        });
+
+        modelBuilder.Entity<OcrFieldAccuracy>(e =>
+        {
+            e.HasKey(a => a.Id);
+            e.ToTable("ocr_field_accuracy");
+            e.Property(a => a.MerchantNameNormalized).HasMaxLength(512).IsRequired();
+            e.Property(a => a.FieldName).HasMaxLength(64).IsRequired();
+            // One row per (merchant, field).
+            e.HasIndex(a => new { a.MerchantNameNormalized, a.FieldName }).IsUnique();
         });
     }
 }

@@ -1,7 +1,7 @@
 # Sprint Plan — Expense Tracker
 **Project:** Family Expense Intelligence Platform
 **Role:** Product Owner
-**Date:** 2026-05-30 (updated 2026-06-27)
+**Date:** 2026-05-30 (updated 2026-06-28)
 **Source:** documents/user-stories.md
 
 ---
@@ -640,6 +640,384 @@ All 37 Phase 2 points delivered. Platform has full budget management, analytics,
 
 ---
 
+## Sprint 8 — Phase 3: Auto-Categorization + Duplicate Detection
+**Dates:** 2026-08-25 → 2026-09-05
+**Sprint Goal:** The platform begins learning from confirmed expense history — new receipts are auto-categorized by merchant, and duplicate uploads are flagged before they pollute the ledger.
+**Committed:** 19 points
+
+### Committed Stories
+
+| Story ID | Title | Points | Engineers | Rationale |
+|----------|-------|--------|-----------|-----------|
+| US-INT-01 | Merchant-to-Category Auto-Categorization | 8 | OCR + BE + FE | Highest-impact intelligence feature; built entirely on existing confirmed expense data — no external model needed |
+| US-INT-02 | Duplicate Expense Detection | 5 | BE + FE | Prevents data quality issues; uses indexed fields already present; delivers immediate visible value |
+| US-INT-03 | Smart Tag Suggestions | 3 | BE + FE | Low-effort extension of the merchant lookup table built for INT-01; high UX value |
+| US-INT-04 | OCR Accuracy Feedback Loop | 3 | OCR + BE | Closes the human-validation loop (AP-005); corrections feed back into per-merchant confidence baselines |
+| **Total** | | **19** | | |
+
+> US-INT-01 carries the most technical uncertainty (learning pipeline design). BE and OCR pair on the data model in week 1; FE picks up US-INT-03 in parallel to avoid blocking.
+
+### Engineer Task Assignments — Sprint 8
+
+#### Senior Backend Engineer (BE)
+
+**US-INT-01 — Auto-Categorization Service**
+- `merchant_category_map` table: `id`, `household_id`, `merchant_name_normalized`, `category`, `confirmed_count`, `last_confirmed_at`
+  - `merchant_name_normalized`: lowercase, whitespace-collapsed, punctuation-stripped version of the merchant string
+  - `confirmed_count`: incremented each time a user confirms (saves without editing) an expense for this merchant
+- Background job triggered after `expense.confirmed` event (Redis): upsert into `merchant_category_map` with the confirmed category
+  - "Confirmed" defined as: expense saved where `source = OCR` and the category field was not changed by the user during the correction step
+  - Manual expense saves also count if user explicitly selected a category
+- Lookup at OCR result time: after `ocr.results` message arrives, query `merchant_category_map` for the normalized merchant name
+  - If a match exists with `confirmed_count >= 3`: attach `suggestedCategory` and `suggestionConfidence: "high"` to the OCR result payload
+  - If match exists with `confirmed_count` 1–2: attach with `suggestionConfidence: "low"`
+  - No match: omit `suggestedCategory` entirely
+- `GET /intelligence/merchant-map` — Owner only; returns the full household merchant-category mapping table (for transparency / audit)
+- Normalization function must be consistent between write path (confirmation) and read path (suggestion) — extract to a shared utility
+
+**US-INT-02 — Duplicate Detection Service**
+- Duplicate defined as: same `household_id`, same `merchant_name_normalized`, same `amount`, and `expense_date` within ±1 calendar day
+- Check runs synchronously in the `POST /expenses` and `POST /receipts/upload` → expense-create paths
+- If a potential duplicate is found: do not block the save; return `duplicateWarning: { existingExpenseId, existingDate, confidence: "high" | "possible" }` in the response body
+  - `high` confidence: all three fields match exactly
+  - `possible` confidence: merchant and amount match, date differs by 1 day
+- `duplicate_dismissals` table: `expense_id`, `dismissed_by`, `dismissed_at` — records when a user confirms "not a duplicate"
+- `POST /expenses/{id}/dismiss-duplicate` — record dismissal; suppresses warning on subsequent fetches of that expense
+- Audit log entry on dismissal: `{ action: "duplicate_dismissed", expenseId, existingExpenseId }`
+
+**US-INT-04 — OCR Accuracy Feedback Loop (API side)**
+- When a user saves corrections via `PATCH /expenses/{id}/corrections`: compare corrected values against the original OCR-extracted values
+- For each field where the user's value differs from OCR output: emit a `ocr.correction` event to Redis with `{ receiptId, merchantNormalized, field, ocrValue, correctedValue }`
+- `ocr_field_accuracy` table: `id`, `merchant_name_normalized`, `field_name`, `total_extractions`, `total_corrections`, `last_updated`
+  - Upsert on each `ocr.correction` event: increment `total_extractions` and `total_corrections`
+- `GET /intelligence/ocr-accuracy` — Owner only; returns per-merchant, per-field accuracy rates: `{ merchant, field, accuracyRate, sampleSize }`
+  - Minimum sample size of 5 before showing a rate (return `insufficient_data: true` below threshold)
+
+---
+
+#### Senior Frontend Engineer (FE)
+
+**US-INT-01 — Auto-Categorization UI**
+- On the expense edit form (reached after OCR completes): if `suggestedCategory` is present in the OCR result, pre-select that category in the dropdown
+- Show a subtle "Suggested" badge next to the category field — not an alert, not a modal; inline and dismissible
+- Badge text: "Suggested based on past expenses" with a small info icon; clicking the icon shows a tooltip explaining the source
+- If `suggestionConfidence: "low"`: badge colour is grey (informational); if `"high"`: badge colour is blue
+- User can change the category normally; the suggestion is just a default pre-fill, not a lock
+
+**US-INT-02 — Duplicate Warning UI**
+- After expense save (POST response): if `duplicateWarning` is present, show a non-blocking inline banner below the form header
+- Banner text: "This looks like a possible duplicate of [Merchant] on [Date] for [Amount]. [View existing] [Dismiss]"
+- "View existing" opens the referenced expense in a side panel or new tab (not a full navigation away)
+- "Dismiss" calls `POST /expenses/{id}/dismiss-duplicate`; banner disappears immediately
+- If user ignores the banner and navigates away, the warning is shown again on next load of that expense until dismissed
+- Duplicate warning banner also surfaces in the expense list row — small amber "Possible duplicate" tag alongside the existing status badges
+
+**US-INT-03 — Smart Tag Suggestions**
+- When the user begins typing in the tag input on the expense form: show an autocomplete dropdown
+- Suggestions sourced from two tiers in priority order:
+  1. Tags previously used for the same merchant (from `merchant_tag_history` — see BE tasks below)
+  2. All tags used in the household, ranked by frequency, as a fallback
+- Maximum 5 suggestions shown; keyboard-navigable; pressing Enter or Tab selects a highlighted suggestion
+- No network call on each keystroke — fetch suggestions once on merchant field blur; cache in component state for the session
+
+**US-INT-04 — OCR Accuracy Report UI**
+- Add "OCR Accuracy" subsection to the existing `/analytics` page (new tab or accordion, not a new route)
+- Table: merchant name, field, accuracy rate (%), sample size — sortable by accuracy rate ascending (worst first)
+- Rows with `insufficient_data: true` shown at the bottom with "Not enough data yet" in the rate column
+- Owner-only: if current user is not Owner, the subsection is hidden entirely (not a 403 page — just not rendered)
+
+---
+
+#### Senior OCR Engineer (OCR)
+
+**US-INT-01 — Merchant Name Normalization**
+- Implement `normalize_merchant(name: str) -> str` in the OCR worker:
+  - Lowercase, strip leading/trailing whitespace, collapse internal whitespace to single space
+  - Remove punctuation characters: `. , ' " - _ & /` (keep alphanumeric and spaces)
+  - Examples: `"WOOLWORTHS PTY LTD."` → `"woolworths pty ltd"`, `"7-Eleven"` → `"7 eleven"`
+- This normalization must exactly match the SQL normalization applied in the BE `merchant_category_map` lookups — coordinate with BE on the canonical algorithm and write a shared test fixture document
+- Apply normalization to the `merchant` field in every `ocr.results` Redis message going forward
+
+**US-INT-04 — OCR Feedback Consumer**
+- Add Redis consumer for the `ocr.correction` channel in the OCR worker process
+- On each correction event: update the local in-memory per-merchant accuracy stats (Python dict, rebuilt from DB on worker start)
+- Use these stats to adjust Tesseract preprocessing aggressiveness for low-accuracy merchants:
+  - If a merchant's field accuracy for `total` or `date` drops below 70%: apply additional deskew + contrast enhancement before the next OCR pass for that merchant
+  - Log: `INFO ocr_accuracy_adaptive merchant={name} field={field} accuracy={rate} action=enhanced_preprocessing`
+- Write an integration test: seed 10 correction events for a merchant, assert that the next OCR call for that merchant triggers the enhanced path
+
+---
+
+### Sprint 8 Definition of Done
+
+- [ ] When a user confirms an expense for a merchant, the merchant-category mapping is persisted and the confirmed count increments correctly
+- [ ] On the next receipt upload from the same merchant (with confirmed_count >= 3), the category field is pre-filled with the suggested category and displays the "Suggested" badge
+- [ ] Suggestion badge is dismissible; changing the category does not trigger any error
+- [ ] Uploading a receipt with the same merchant, amount, and date as an existing expense shows a duplicate warning banner — save is not blocked
+- [ ] `possible` confidence duplicate (1-day date difference) shows the amber "Possible duplicate" tag; exact match shows the same
+- [ ] Dismissing a duplicate warning calls the dismiss endpoint and suppresses the banner on reload
+- [ ] Tag autocomplete shows merchant-specific tag history first; falls back to household tag frequency
+- [ ] OCR accuracy table is visible to Owner on the analytics page; hidden for other roles
+- [ ] Fields with fewer than 5 samples show "Not enough data yet" rather than a rate
+- [ ] Merchant name normalization produces identical output in the Python worker and the .NET service for the same input string (verified by shared test fixture)
+- [ ] All new endpoints have integration tests
+- [ ] No `console.log` or debug output in committed code
+
+---
+
+## Sprint 9 — Phase 3: Merchant Template Learning + Recurring Expense Detection
+**Dates:** 2026-09-08 → 2026-09-19
+**Sprint Goal:** The OCR worker applies per-merchant field position templates to improve extraction accuracy on repeat merchants, and the platform automatically identifies recurring monthly expenses to help families plan ahead.
+**Committed:** 19 points
+
+### Committed Stories
+
+| Story ID | Title | Points | Engineers | Rationale |
+|----------|-------|--------|-----------|-----------|
+| US-INT-05 | Merchant Receipt Layout Templates | 8 | OCR + BE | Core Phase 3 differentiator; uses correction history from Sprint 8 INT-04 to learn field positions |
+| US-INT-06 | Recurring Expense Detection | 5 | BE + FE | High household value; pattern detection over existing indexed data; no external ML needed |
+| US-INT-07 | Merchant Alias Grouping | 3 | BE + FE | Low effort; prevents merchant fragmentation in analytics and template matching (e.g., "Woolworths #42" and "Woolworths #18" are the same merchant) |
+| US-INT-08 | Intelligence Settings Page | 3 | BE + FE | Gives Owner visibility and control over all learned data; required for user trust in AP-001 privacy-first deployment |
+| **Total** | | **19** | | |
+
+> US-INT-05 is the most complex story in Phase 3. OCR leads the template store design in week 1; BE wires the API; FE is shielded by taking US-INT-07 and US-INT-08 in parallel.
+
+### Engineer Task Assignments — Sprint 9
+
+#### Senior Backend Engineer (BE)
+
+**US-INT-05 — Template Store API**
+- `merchant_field_templates` table: `id`, `household_id`, `merchant_name_normalized`, `field_name`, `region_x`, `region_y`, `region_w`, `region_h`, `sample_count`, `last_updated`
+  - One row per merchant-field combination (e.g., one row for `woolworths pty ltd` + `total`, another for `woolworths pty ltd` + `date`)
+  - `region_x/y/w/h`: normalized coordinates (0.0–1.0 as fraction of image dimensions) representing the bounding box where this field was found
+  - `sample_count`: number of confirmed receipts used to compute this region
+- `POST /internal/merchant-templates` — internal endpoint (not user-facing); OCR worker posts updated template data after each confirmed receipt
+  - Upsert: if template exists, recalculate the region as a weighted moving average of `(existing_region × sample_count + new_region) / (sample_count + 1)`; increment `sample_count`
+- `GET /intelligence/merchant-templates` — Owner only; returns all templates for the household (transparency endpoint)
+- `DELETE /intelligence/merchant-templates/{merchantNormalized}` — Owner only; deletes all field templates for a merchant; OCR worker falls back to full-image scan for that merchant
+- Audit log on template deletion
+
+**US-INT-06 — Recurring Expense Detection**
+- Recurring pattern defined as: same `merchant_name_normalized` + same amount (within ±5%) appearing in at least 3 of the last 4 calendar months
+- Background job: runs nightly via Redis-scheduled task; scans last 6 months of confirmed expenses; writes results to `recurring_expenses` table
+- `recurring_expenses` table: `id`, `household_id`, `merchant_name_normalized`, `average_amount`, `typical_day_of_month`, `confidence`, `last_detected_at`, `snoozed_until`
+  - `typical_day_of_month`: median day across matched months (integer 1–31)
+  - `confidence`: `"confirmed"` (4/4 months present) or `"likely"` (3/4 months present)
+- `GET /intelligence/recurring` — return all detected recurring expenses for the household; Adult Member sees own; Owner sees all
+- `POST /intelligence/recurring/{id}/snooze?days=30` — Owner or Adult Member; sets `snoozed_until`; suppresses alerts for that period
+- Alert: on the 3rd of each month, emit a notification for each recurring expense where no matching expense exists yet in the current month and `snoozed_until` is null or past
+
+**US-INT-07 — Merchant Alias API**
+- `merchant_aliases` table: `id`, `household_id`, `alias_normalized`, `canonical_normalized`, `created_by`, `created_at`
+  - `alias_normalized`: the raw variant (e.g., `"woolworths 42"`)
+  - `canonical_normalized`: the master name that all aliases resolve to (e.g., `"woolworths"`)
+- `POST /intelligence/merchant-aliases` — Owner only; body: `{ alias, canonical }`; both values are normalized before insert
+- `GET /intelligence/merchant-aliases` — return all aliases for the household
+- `DELETE /intelligence/merchant-aliases/{id}` — Owner only
+- All lookups in `merchant_category_map`, `merchant_field_templates`, and `merchant_tag_history` must resolve through the alias table first: if the merchant matches an alias, use the canonical name for the lookup
+- Alias resolution must be a shared utility used by both .NET services and the Python OCR worker (via the internal API)
+
+**US-INT-08 — Intelligence Settings API**
+- `GET /intelligence/summary` — Owner only; returns counts: `{ merchantMappings, fieldTemplates, recurringExpenses, aliases }`
+- This endpoint is the data source for the settings page; no new tables required
+
+---
+
+#### Senior Frontend Engineer (FE)
+
+**US-INT-06 — Recurring Expense UI**
+- `/intelligence/recurring` page: list of detected recurring expenses — merchant, average amount, typical day, confidence badge
+- Confidence badge: green "Confirmed" for 4/4 months; amber "Likely" for 3/4 months
+- "Snooze 30 days" button per row; snoozed items shown in a collapsed "Snoozed" section at the bottom
+- Monthly reminder notification (from BE alert): appears in the existing notifications bell; links to `/intelligence/recurring`
+- Empty state: "No recurring patterns detected yet — keep logging expenses and we'll identify your regular bills."
+
+**US-INT-07 — Merchant Alias UI**
+- Within the Intelligence Settings page (US-INT-08): "Merchant Aliases" section
+- Table: alias name → canonical name; delete button per row
+- "Add alias" inline form: two text inputs (Alias, Canonical) + Add button
+- Client-side validation: alias and canonical must not be the same string; both fields required
+- After adding: table refreshes; no page navigation
+
+**US-INT-08 — Intelligence Settings Page**
+- `/settings/intelligence` page — Owner only (redirect to `/dashboard` with a 403 message for other roles)
+- Four summary cards at the top using `GET /intelligence/summary`: Merchant Mappings, Field Templates, Recurring Patterns, Merchant Aliases
+- Each card has a "Manage" link that scrolls to or expands the relevant section below
+- Sections: Merchant Category Map (read-only table from `GET /intelligence/merchant-map`), Field Templates (read-only list + delete per merchant from `GET /intelligence/merchant-templates`), Merchant Aliases (interactive — see US-INT-07)
+- Deleting a field template shows a confirmation modal: "This will reset OCR accuracy improvements for [Merchant]. Continue?"
+- Page must be completely hidden from the nav sidebar for non-Owner roles
+
+---
+
+#### Senior OCR Engineer (OCR)
+
+**US-INT-05 — Template-Guided OCR Extraction**
+- After the standard full-image Tesseract pass completes: check `GET /internal/merchant-templates/{merchantNormalized}` for stored field regions
+- If templates exist with `sample_count >= 5` for a field: run a second targeted Tesseract pass on the cropped region (scaled to the full image's dimensions)
+  - Use the targeted result if its confidence score is higher than the full-image result for that field
+  - Log: `INFO template_extraction merchant={name} field={field} template_confidence={x} full_confidence={y} selected={source}`
+- After a confirmed expense save (`ocr.correction` event with no correction on a field): record the bounding box coordinates where that field was found in the full-image scan; post to `POST /internal/merchant-templates` to update the template store
+- If no template exists yet: proceed with full-image scan only (no regression from current behaviour)
+- Performance: the targeted crop pass must not add more than 1 second to total OCR time (crop is small; this should be well within budget)
+- Integration test: seed a template with a known region, run OCR on a test image, assert the targeted crop path was taken and its result was used
+
+**US-INT-07 — Alias Resolution in Worker**
+- On worker startup and every 5 minutes: fetch `GET /intelligence/merchant-aliases` and cache the alias map in memory (dict: alias → canonical)
+- Apply alias resolution immediately after merchant name normalization — before any `merchant_category_map` or `merchant_field_templates` lookup
+- Log when an alias is resolved: `INFO alias_resolved raw={alias} canonical={canonical}`
+
+---
+
+### Sprint 9 Definition of Done
+
+- [ ] After 5+ confirmed receipts for a merchant, the OCR worker uses the stored field-region template for that merchant on subsequent receipts; the targeted crop pass is logged
+- [ ] Deleting a field template via the Intelligence Settings page causes the OCR worker to fall back to full-image scan on the next receipt for that merchant
+- [ ] Nightly job detects merchants appearing in 3 of 4 recent months and writes them to `recurring_expenses`
+- [ ] Recurring expenses page lists detected patterns with correct confidence badges
+- [ ] A recurring expense with no match in the current month (by the 3rd) generates an in-app notification
+- [ ] Snoozed recurring expense suppresses the notification until the snooze period expires
+- [ ] Owner can add a merchant alias; subsequent OCR results and analytics for the alias variant resolve to the canonical merchant name
+- [ ] Merchant alias is applied consistently in merchant-category map lookups, template lookups, and tag history lookups
+- [ ] Intelligence Settings page is inaccessible to Adult Member and Restricted Member roles (redirect with message, not 403 error page)
+- [ ] Summary cards on Intelligence Settings page display accurate counts from the database
+- [ ] All new endpoints have integration tests
+- [ ] No `console.log` or debug output in committed code
+
+---
+
+## Sprint 10 — Phase 3 Completion + Phase 4 Groundwork
+**Dates:** 2026-09-22 → 2026-10-03
+**Sprint Goal:** Phase 3 intelligence is fully shipped and validated; the mobile app scaffolding and offline-sync data contract are in place so Phase 4 development can begin immediately in Sprint 11.
+**Committed:** 19 points
+
+### Committed Stories
+
+| Story ID | Title | Points | Engineers | Rationale |
+|----------|-------|--------|-----------|-----------|
+| US-INT-09 | Intelligence Onboarding + Privacy Disclosure | 3 | BE + FE | Required before Phase 3 features are exposed to non-Owner members; AP-001 compliance |
+| US-INT-10 | Phase 3 End-to-End Validation + Hardening | 5 | ALL | Accuracy regression tests, edge-case hardening, and performance validation for all INT stories |
+| US-MOB-01 | React Native + Expo App Scaffold | 5 | FE | Sets up project structure, navigation shell, and shared API client so Sprint 11 can deliver features immediately |
+| US-MOB-02 | Offline Sync Data Contract | 3 | BE + FE | Defines the sync protocol (conflict resolution, delta payloads) before any offline feature is built; a late design decision here is hard to reverse |
+| US-MOB-03 | Mobile Auth Flow (Login + MFA) | 3 | FE | Login is the gateway to every other mobile feature; must be done first |
+| **Total** | | **19** | | |
+
+> Phase 4 stories in this sprint are scaffolding and design only — no user-visible mobile features ship until Sprint 11. If Phase 3 hardening (US-INT-10) runs long, US-MOB-02 is the drop candidate (design can continue async in Sprint 11 week 1).
+
+### Engineer Task Assignments — Sprint 10
+
+#### Senior Backend Engineer (BE)
+
+**US-INT-09 — Privacy Disclosure API**
+- `intelligence_consent` table: `id`, `household_id`, `user_id`, `consented_at`, `consent_version`
+  - `consent_version`: integer; increment when the disclosure text changes materially
+- `POST /intelligence/consent` — any authenticated user; records consent for current user at current version
+- `GET /intelligence/consent/status` — returns `{ consented: bool, consentVersion: int, currentVersion: int }`
+- All Phase 3 intelligence endpoints (`/intelligence/*`) check consent for the requesting user; return 403 with `{ error: "intelligence_consent_required" }` if not consented
+  - Exception: Owner can access `GET /intelligence/summary` and `GET /intelligence/merchant-map` without consent (administrative transparency)
+- Migration: seed `consent_version = 1` in application configuration
+
+**US-INT-10 — Phase 3 Hardening (BE)**
+- Accuracy regression test suite: for each of the 50 benchmark receipts from Sprint 7, run the full INT-01 + INT-05 pipeline and assert field accuracy has not degraded vs the Sprint 7 baseline
+- Edge cases to cover and fix if failing:
+  - Merchant with no confirmed history → suggestion is omitted (no null suggestion surfaced)
+  - Template region outside image bounds (corrupted template) → fall back to full-image scan, log warning, do not crash
+  - Duplicate detection when `amount` is null (manual expense, no amount set) → duplicate check skipped, no false positive
+  - Recurring job when household has zero expenses → completes silently, no exception
+- Review all Phase 3 endpoints for missing parameterized queries; flag any string interpolation in SQL
+- Confirm Redis consumer for `ocr.correction` does not leak memory under 100 consecutive events (run load test)
+
+**US-MOB-02 — Offline Sync Data Contract**
+- Design and document the sync protocol in `documents/offline-sync-contract.md`:
+  - Delta sync: `GET /sync/delta?since=ISO8601` returns all expense, receipt, and budget changes since the given timestamp
+  - Each entity in the delta carries `updatedAt` and a `syncVersion` (monotonic integer per household)
+  - Conflict resolution rule: server wins for all fields except `notes` (last-write wins for notes, using `updatedAt`)
+  - Tombstone records: deleted entities are represented as `{ id, deletedAt }` — client removes locally on receipt
+- `GET /sync/delta` endpoint (scaffold only this sprint — full implementation in Phase 4):
+  - Returns 200 with empty `changes: []` for now; schema is fixed so mobile can code against it immediately
+  - Rate-limited to 1 request per 30 seconds per device (return 429 with `Retry-After` header if exceeded)
+- Document all decisions in `documents/offline-sync-contract.md`; this document is the single source of truth for Phase 4
+
+---
+
+#### Senior Frontend Engineer (FE)
+
+**US-INT-09 — Privacy Disclosure UI**
+- On first login after Phase 3 features are deployed: show a full-screen modal (not dismissible by clicking outside) explaining what data is learned locally:
+  - "This app learns from your confirmed expenses to suggest categories, detect recurring bills, and improve receipt scanning. All learning happens on your home server — no data leaves this device."
+  - Two buttons: "Enable Smart Features" (calls `POST /intelligence/consent`) and "Keep Manual" (skips consent; user can enable later in settings)
+- After consent: modal closes; user proceeds normally; Phase 3 features are active
+- "Keep Manual" path: all INT-01, INT-03, INT-06, INT-07 features are hidden in the UI for that user (no suggestion badges, no recurring page, no tag autocomplete)
+- Settings page: `/settings/intelligence` shows "Smart Features: On / Off" toggle at the top; Off reverts to the "Keep Manual" experience without deleting learned data
+
+**US-MOB-01 — React Native + Expo App Scaffold**
+- Initialize Expo project at `source/mobile/` using `npx create-expo-app` with the TypeScript template
+- Directory structure mirrors the web app conventions:
+  - `source/mobile/src/app/` — Expo Router file-based routes
+  - `source/mobile/src/components/` — shared UI components
+  - `source/mobile/src/api/` — API client (reuse the same typed fetch wrappers as the web app where possible)
+  - `source/mobile/src/store/` — Zustand store (same pattern as web)
+- Configure Expo Router with a root stack: `(auth)` group (login, MFA) and `(app)` group (protected screens)
+- Set up the base API client pointing to the same .NET backend; auth uses the same session cookie mechanism (fetch with `credentials: "include"`)
+- Add to `docker-compose.yml`: no new service needed (mobile connects to existing `aspnet-api`); document the local dev URL configuration in `source/mobile/README.md`
+- CI: add a lint + type-check step for `source/mobile/` to the existing pipeline
+
+**US-MOB-02 — Offline Sync Contract (FE)**
+- Review and sign off on the sync contract document produced by BE
+- Scaffold `source/mobile/src/api/sync.ts`: typed client for `GET /sync/delta` matching the agreed schema
+- Scaffold `source/mobile/src/store/syncStore.ts`: Zustand slice with `lastSyncedAt` state and a `syncDelta()` action (no-op implementation this sprint; wired in Phase 4)
+- Document any mobile-specific concerns (e.g., background fetch limitations on iOS) in `documents/offline-sync-contract.md`
+
+**US-MOB-03 — Mobile Auth Flow**
+- `source/mobile/src/app/(auth)/login.tsx`: login screen with email + password fields; matches web login behaviour
+- On successful login: if MFA is required, navigate to `(auth)/mfa.tsx`; otherwise navigate to `(app)/dashboard`
+- `source/mobile/src/app/(auth)/mfa.tsx`: 6-digit OTP input; same session-based flow as web; auto-submit on 6th digit entry
+- Session persistence: use `expo-secure-store` to persist the session cookie across app restarts (replaces browser cookie storage)
+- Error states: invalid credentials (401) → inline error under password field; network unavailable → "Cannot reach server. Check your connection." banner
+- Logout: clears `expo-secure-store` session entry and navigates back to login
+
+---
+
+#### Senior OCR Engineer (OCR)
+
+**US-INT-10 — Phase 3 Hardening (OCR)**
+- Re-run the Sprint 7 accuracy benchmark (50 receipts) with all Phase 3 changes active; produce a comparison report:
+  - Baseline (Sprint 7): per-field accuracy %
+  - Sprint 10 (with templates + feedback loop): per-field accuracy %
+  - Target: no field regresses by more than 5 percentage points; total accuracy improves by at least 10 percentage points on the subset of receipts that have templates
+- Template edge case: receipt image is rotated 90 degrees — existing template region coordinates will be wrong; detect rotation (OpenCV `minAreaRect`) and rotate region coordinates before the targeted crop pass
+- Memory profiling: run the worker under 50 concurrent jobs for 10 minutes; assert RSS memory stays below 512 MB
+- Ensure `/storage` cleanup job from Sprint 7 hardening runs correctly and has been verified in the CI environment
+- Document the final OCR accuracy baseline in `documents/ocr-accuracy-baseline.md` for Phase 4 reference
+
+---
+
+### Sprint 10 Definition of Done
+
+- [ ] First-time user (post-Phase 3 deploy) sees the privacy disclosure modal before any intelligence features are active
+- [ ] User who selects "Keep Manual" sees no suggestion badges, no tag autocomplete, and no recurring expenses page
+- [ ] User who consents can toggle Smart Features off in settings; toggling off hides intelligence features without deleting learned data
+- [ ] All Phase 3 intelligence endpoints return 403 with `intelligence_consent_required` for users who have not consented (except Owner administrative endpoints)
+- [ ] Phase 3 accuracy regression suite passes: no field accuracy regresses more than 5 percentage points vs Sprint 7 baseline
+- [ ] Template extraction handles rotated images without crashing; falls back to full-image scan and logs a warning
+- [ ] Duplicate detection skips the check (no false positive) when `amount` is null on either the new or existing expense
+- [ ] `GET /sync/delta` returns 200 with `changes: []`; returns 429 with `Retry-After` when called more than once in 30 seconds from the same device
+- [ ] Expo app scaffold initializes cleanly (`npx expo start` runs without errors); login and MFA screens are navigable end-to-end against the local backend
+- [ ] Session persists across mobile app restarts using `expo-secure-store`
+- [ ] `syncStore.ts` and `sync.ts` scaffolds are typed against the agreed sync contract schema with no TypeScript errors
+- [ ] OCR accuracy comparison report is committed to `documents/ocr-accuracy-baseline.md`
+- [ ] All new endpoints have integration tests
+- [ ] No `console.log` or debug output in committed code
+
+---
+
+## Phase 3 Complete — End of Sprint 10 (2026-10-03)
+
+All Phase 3 intelligence features are live: auto-categorization, duplicate detection, smart tag suggestions, OCR feedback loop, merchant template learning, recurring expense detection, merchant alias grouping, and intelligence settings. All processing is local — AP-001 is upheld across every feature.
+
+**Phase 4 scope (Sprint 11 onward):** Receipt upload from mobile, expense CRUD on mobile, offline queue and delta sync, push notifications.
+
+---
+
 ## Velocity Tracking
 
 | Sprint | Committed | Delivered | Velocity | Notes |
@@ -651,5 +1029,8 @@ All 37 Phase 2 points delivered. Platform has full budget management, analytics,
 | Sprint 5 | 20 | TBD | TBD | Update after sprint review |
 | Sprint 6 | 21 | 21 | 21 | All 5 stories delivered; integration tests pending |
 | Sprint 7 | 18 | TBD | TBD | Update after sprint review |
+| Sprint 8 | 19 | TBD | TBD | Update after sprint review |
+| Sprint 9 | 19 | TBD | TBD | Update after sprint review |
+| Sprint 10 | 19 | TBD | TBD | Phase 3 complete; Phase 4 scaffold delivered |
 
-**Established velocity:** ~19 pts/sprint (18–20 range, 3-sprint average)
+**Established velocity:** ~19 pts/sprint (18–21 range, 3-sprint average)

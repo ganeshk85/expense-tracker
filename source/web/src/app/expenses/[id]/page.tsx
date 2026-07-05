@@ -10,13 +10,16 @@ import {
   deleteAttachment,
   deleteExpense,
   detachReceipt,
+  dismissDuplicate,
   getAttachments,
   getExpense,
   getSession,
   updateExpense,
   uploadAttachment,
 } from '@/api/expenses'
+import { getTagSuggestions } from '@/api/intelligence'
 import type {
+  DuplicateWarning,
   ExpenseAttachmentResponse,
   ExpenseResponse,
   ExpenseShareResponse,
@@ -155,6 +158,15 @@ export default function ExpenseDetailPage({
   const [uploadingFile, setUploadingFile] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // US-INT-02: Duplicate warning
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null)
+  const [dismissingDuplicate, setDismissingDuplicate] = useState(false)
+
+  // US-INT-03: Tag suggestions
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([])
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false)
+  const [tagSuggestionIdx, setTagSuggestionIdx] = useState(-1)
+
   const today = new Date().toISOString().split('T').at(0) ?? ''
 
   function populateForm(e: ExpenseResponse) {
@@ -200,6 +212,7 @@ export default function ExpenseDetailPage({
         setSession(sess)
         setAttachments(attachList.attachments)
         populateForm(e)
+        if (e.duplicateWarning) setDuplicateWarning(e.duplicateWarning)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load expense.')
       } finally {
@@ -356,6 +369,53 @@ export default function ExpenseDetailPage({
     }
   }
 
+  async function handleDismissDuplicate() {
+    setDismissingDuplicate(true)
+    try {
+      await dismissDuplicate(id)
+      setDuplicateWarning(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to dismiss duplicate warning.')
+    } finally {
+      setDismissingDuplicate(false)
+    }
+  }
+
+  async function handleMerchantBlur() {
+    const name = merchantName.trim()
+    if (!name) {
+      setTagSuggestions([])
+      return
+    }
+    try {
+      const result = await getTagSuggestions(name)
+      setTagSuggestions(result.tags)
+      if (result.tags.length > 0) setShowTagSuggestions(true)
+    } catch {
+      // Non-critical — tag suggestions are best-effort
+    }
+  }
+
+  function handleTagSuggestionKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (!showTagSuggestions || tagSuggestions.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setTagSuggestionIdx(i => Math.min(i + 1, tagSuggestions.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setTagSuggestionIdx(i => Math.max(i - 1, -1))
+    } else if ((e.key === 'Enter' || e.key === 'Tab') && tagSuggestionIdx >= 0) {
+      e.preventDefault()
+      const chosen = tagSuggestions[tagSuggestionIdx]
+      if (chosen && !tags.includes(chosen)) {
+        setTags(prev => [...prev, chosen])
+      }
+      setPendingTag('')
+      setShowTagSuggestions(false)
+      setTagSuggestionIdx(-1)
+    }
+  }
+
   async function handleDelete() {
     setDeleting(true)
     try {
@@ -500,6 +560,36 @@ export default function ExpenseDetailPage({
         </div>
       )}
 
+      {duplicateWarning && (
+        <div role="alert" className={styles.duplicateBanner}>
+          <span className={styles.duplicateBannerIcon}>⚠</span>
+          <div className={styles.duplicateBannerText}>
+            This looks like a {duplicateWarning.confidence === 'high' ? 'likely' : 'possible'} duplicate
+            {duplicateWarning.existingDate && (
+              <> of an expense on {new Date(duplicateWarning.existingDate).toLocaleDateString()}</>
+            )}.
+          </div>
+          <div className={styles.duplicateBannerActions}>
+            <a
+              href={`/expenses/${duplicateWarning.existingExpenseId}`}
+              target="_blank"
+              rel="noreferrer"
+              className={styles.duplicateBannerLink}
+            >
+              View existing
+            </a>
+            <button
+              type="button"
+              className={styles.duplicateBannerDismiss}
+              onClick={handleDismissDuplicate}
+              disabled={dismissingDuplicate}
+            >
+              {dismissingDuplicate ? 'Dismissing…' : 'Dismiss'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {isReader && (
         <div role="status" className={styles.readerBanner}>
           You have view-only access. You can view this expense but cannot make changes.
@@ -525,6 +615,7 @@ export default function ExpenseDetailPage({
                 className={`${styles.input} ${hasOcrData && (confidence.merchantName ?? 100) < 70 ? styles.inputLowConfidence : ''}`}
                 value={merchantName}
                 onChange={e => setMerchantName(e.target.value)}
+                onBlur={handleMerchantBlur}
                 maxLength={200}
               />
             </div>
@@ -627,7 +718,19 @@ export default function ExpenseDetailPage({
           <h2 className={styles.sectionTitle}>Classification</h2>
           <div className={styles.fieldRow}>
             <div className={styles.field}>
-              <label htmlFor="category" className={styles.label}>Category</label>
+              <div className={styles.labelRow}>
+                <label htmlFor="category" className={styles.label}>Category</label>
+                {expense.suggestedCategory && (
+                  <span
+                    className={expense.suggestionConfidence === 'high'
+                      ? styles.suggestionBadgeHigh
+                      : styles.suggestionBadgeLow}
+                    title="Suggested based on past expenses for this merchant"
+                  >
+                    Suggested
+                  </span>
+                )}
+              </div>
               <select
                 id="category"
                 className={styles.select}
@@ -642,7 +745,7 @@ export default function ExpenseDetailPage({
 
           <div className={styles.fieldFull} style={{ marginTop: '1rem' }}>
             <label className={styles.label}>Tags</label>
-            <div className={styles.tagInputWrapper}>
+            <div className={styles.tagInputWrapper} style={{ position: 'relative' }}>
               {tags.map(tag => (
                 <span key={tag} className={styles.tag}>
                   {tag}
@@ -653,12 +756,33 @@ export default function ExpenseDetailPage({
                 type="text"
                 className={styles.tagInput}
                 value={pendingTag}
-                onChange={e => setPendingTag(e.target.value)}
-                onKeyDown={handleTagKeyDown}
-                onBlur={addTag}
+                onChange={e => { setPendingTag(e.target.value); setTagSuggestionIdx(-1) }}
+                onKeyDown={e => { handleTagKeyDown(e); handleTagSuggestionKeyDown(e) }}
+                onFocus={() => { if (tagSuggestions.length > 0) setShowTagSuggestions(true) }}
+                onBlur={() => { setTimeout(() => { setShowTagSuggestions(false); addTag() }, 150) }}
                 placeholder={tags.length === 0 ? 'Type a tag and press Enter' : ''}
                 maxLength={50}
               />
+              {showTagSuggestions && tagSuggestions.length > 0 && (
+                <ul className={styles.tagSuggestionsDropdown} role="listbox">
+                  {tagSuggestions.filter(s => !tags.includes(s)).map((suggestion, i) => (
+                    <li
+                      key={suggestion}
+                      role="option"
+                      aria-selected={i === tagSuggestionIdx}
+                      className={i === tagSuggestionIdx ? styles.tagSuggestionActive : styles.tagSuggestion}
+                      onMouseDown={() => {
+                        if (!tags.includes(suggestion)) setTags(prev => [...prev, suggestion])
+                        setPendingTag('')
+                        setShowTagSuggestions(false)
+                        setTagSuggestionIdx(-1)
+                      }}
+                    >
+                      {suggestion}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <p className={styles.hint}>Press Enter to add a tag</p>
           </div>

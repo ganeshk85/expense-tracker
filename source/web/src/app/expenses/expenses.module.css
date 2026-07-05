@@ -155,9 +155,10 @@
 .badgeHealth     { background: #fee2e2; color: #991b1b; }
 .badgeOther      { background: #f3f4f6; color: #374151; }
 
-.sourceOCR    { background: #dbeafe; color: #1d4ed8; }
-.sourceManual { background: #f3f4f6; color: #6b7280; }
-.sharedBadge  { background: #ede9fe; color: #5b21b6; }
+.sourceOCR      { background: #dbeafe; color: #1d4ed8; }
+.sourceManual   { background: #f3f4f6; color: #6b7280; }
+.sharedBadge    { background: #ede9fe; color: #5b21b6; }
+.duplicateBadge { background: #fef3c7; color: #92400e; }
 
 .merchantCell {
   display: flex;

@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import redis.asyncio as aioredis
 from fastapi import FastAPI
 
 from .config import Settings
+from .correction_consumer import CorrectionConsumer
 from .ocr_worker import OcrWorker
 from .thumbnail_worker import ThumbnailWorker
 
@@ -25,6 +27,11 @@ async def start_workers() -> None:
     ocr_worker = OcrWorker(settings)
     asyncio.create_task(ocr_worker.run())
     logger.info("OCR worker started")
+
+    redis_client = aioredis.from_url(settings.redis_url, decode_responses=False)
+    correction_consumer = CorrectionConsumer(redis_client)
+    asyncio.create_task(correction_consumer.start())
+    logger.info("Correction consumer started")
 
 
 @app.get("/health")

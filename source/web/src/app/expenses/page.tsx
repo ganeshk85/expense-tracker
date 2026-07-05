@@ -376,6 +376,11 @@ export default function ExpensesPage() {
                       {expense.isShared && (
                         <span className={`${styles.badge} ${styles.sharedBadge}`}>Shared</span>
                       )}
+                      {expense.duplicateWarning && (
+                        <span className={`${styles.badge} ${styles.duplicateBadge}`} title="Possible duplicate expense">
+                          Possible duplicate
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td className={styles.td}>{formatDate(expense.date)}</td>

@@ -108,6 +108,41 @@ export interface AttachmentListResponse {
   attachments: ExpenseAttachmentResponse[]
 }
 
+// ── Intelligence ──────────────────────────────────────────────────────────────
+
+export interface DuplicateWarning {
+  existingExpenseId: string
+  existingDate: string | null
+  confidence: 'high' | 'possible'
+}
+
+export interface TagSuggestionsResponse {
+  tags: string[]
+}
+
+export interface OcrFieldAccuracyEntry {
+  merchant: string
+  field: string
+  accuracyRate: number | null
+  sampleSize: number
+  insufficientData: boolean
+}
+
+export interface OcrAccuracyResponse {
+  items: OcrFieldAccuracyEntry[]
+}
+
+export interface MerchantCategoryMapEntry {
+  merchantNameNormalized: string
+  category: string
+  confirmedCount: number
+  lastConfirmedAt: string
+}
+
+export interface MerchantCategoryMapResponse {
+  items: MerchantCategoryMapEntry[]
+}
+
 export interface ExpenseResponse {
   id: string
   receiptId: string | null
@@ -134,6 +169,10 @@ export interface ExpenseResponse {
   attachments: ExpenseAttachmentResponse[]
   createdAt: string
   updatedAt: string
+  // Intelligence fields — present only when relevant
+  duplicateWarning?: DuplicateWarning
+  suggestedCategory?: string
+  suggestionConfidence?: 'low' | 'high'
 }
 
 export interface ExpenseListResponse {

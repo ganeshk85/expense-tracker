@@ -15,6 +15,7 @@ using ExpenseTracker.Budget.Services;
 using ExpenseTracker.Expense;
 using ExpenseTracker.Expense.Endpoints;
 using ExpenseTracker.Expense.Repositories;
+using ExpenseTracker.Expense.Services;
 using ExpenseTracker.Ocr;
 using ExpenseTracker.Ocr.Repositories;
 using ExpenseTracker.Receipt;
@@ -122,6 +123,14 @@ builder.Services.AddScoped<IBudgetRepository, BudgetRepository>();
 // Budget alert trigger — decoupled via Shared interface so Expense module can call it without circular dep.
 builder.Services.AddScoped<IBudgetAlertService>(sp => (IBudgetAlertService)sp.GetRequiredService<ExpenseTracker.Budget.Services.IBudgetService>());
 
+// Intelligence repository and service
+builder.Services.AddScoped<IIntelligenceRepository, IntelligenceRepository>();
+builder.Services.AddScoped<IIntelligenceService, IntelligenceService>();
+
+// Intelligence Redis background consumers
+builder.Services.AddHostedService<ExpenseConfirmedConsumerService>();
+builder.Services.AddHostedService<OcrCorrectionConsumerService>();
+
 // Modules
 builder.Services.AddAuthModule();
 builder.Services.AddReceiptModule();
@@ -180,6 +189,7 @@ app.MapAuthEndpoints();
 app.MapReceiptEndpoints();
 app.MapAuditEndpoints();
 app.MapExpenseEndpoints();
+app.MapIntelligenceEndpoints();
 app.MapDashboardEndpoints();
 app.MapAnalyticsEndpoints();
 app.MapBudgetEndpoints();

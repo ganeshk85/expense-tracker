@@ -376,3 +376,79 @@
   font-style: italic;
   max-width: 14rem;
 }
+
+/* ── OCR Accuracy section (US-INT-04) ───────────────────────────────────── */
+
+.sectionTitle {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+
+.ocrSectionHint {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.ocrTableWrapper {
+  overflow-x: auto;
+}
+
+.ocrTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.ocrTable th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.375rem 0.75rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.ocrTable td {
+  padding: 0.5rem 0.75rem;
+  color: #374151;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.ocrTable tr:last-child td {
+  border-bottom: none;
+}
+
+.sortBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0;
+}
+
+.sortBtnActive {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4f46e5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0;
+}
+
+.ocrGood     { color: #16a34a; font-weight: 600; }
+.ocrMedium   { color: #d97706; font-weight: 600; }
+.ocrPoor     { color: #dc2626; font-weight: 600; }
+.ocrInsufficient { color: #9ca3af; font-style: italic; }

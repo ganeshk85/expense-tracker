@@ -53,6 +53,10 @@ export function deleteExpense(id: string): Promise<void> {
   return apiClient.del<void>(`/expenses/${id}`)
 }
 
+export function dismissDuplicate(id: string): Promise<void> {
+  return apiClient.post<void>(`/expenses/${id}/dismiss-duplicate`, {})
+}
+
 // ── Item CRUD ─────────────────────────────────────────────────────────────────
 
 export function getExpenseItems(expenseId: string): Promise<ExpenseItemsListResponse> {

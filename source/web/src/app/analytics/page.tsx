@@ -2,11 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import { getCategoryTrends, getMerchantDetail, getMerchantRankings } from '@/api/analytics'
+import { getOcrAccuracy } from '@/api/intelligence'
+import { getSession } from '@/api/expenses'
 import type {
   CategoryTrendResponse,
   CategoryTrendSeries,
   MerchantDetailResponse,
   MerchantRankItem,
+  OcrAccuracyResponse,
+  OcrFieldAccuracyEntry,
+  SessionResponse,
 } from '@/api/types'
 import styles from './analytics.module.css'
 
@@ -33,7 +38,96 @@ function formatDate(iso: string | null): string {
 
 // ── Tab type ──────────────────────────────────────────────────────────────────
 
-type Tab = 'trends' | 'merchants'
+type Tab = 'trends' | 'merchants' | 'ocr-accuracy'
+
+// ── OCR Accuracy table (US-INT-04, Owner-only) ────────────────────────────────
+
+type OcrSortField = 'merchant' | 'field' | 'accuracy'
+
+function OcrAccuracyTable({ data }: { data: OcrAccuracyResponse }) {
+  const [sortField, setSortField] = useState<OcrSortField>('accuracy')
+  const [sortAsc, setSortAsc] = useState(true)
+
+  function toggleSort(field: OcrSortField) {
+    if (field === sortField) {
+      setSortAsc(a => !a)
+    } else {
+      setSortField(field)
+      setSortAsc(field !== 'accuracy') // accuracy sorts worst-first by default
+    }
+  }
+
+  const sufficient = data.items.filter(i => !i.insufficientData)
+  const insufficient = data.items.filter(i => i.insufficientData)
+
+  const sorted = [...sufficient].sort((a, b) => {
+    let cmp = 0
+    if (sortField === 'merchant') cmp = a.merchant.localeCompare(b.merchant)
+    else if (sortField === 'field') cmp = a.field.localeCompare(b.field)
+    else cmp = (a.accuracyRate ?? 0) - (b.accuracyRate ?? 0)
+    return sortAsc ? cmp : -cmp
+  })
+
+  const combined: OcrFieldAccuracyEntry[] = [...sorted, ...insufficient]
+
+  if (combined.length === 0) {
+    return <p className={styles.emptyHint}>No OCR accuracy data yet. Correct some expenses to start tracking.</p>
+  }
+
+  function SortBtn({ field, label }: { field: OcrSortField; label: string }) {
+    const active = sortField === field
+    return (
+      <button
+        type="button"
+        className={`${styles.sortBtn} ${active ? styles.sortBtnActive : ''}`}
+        onClick={() => toggleSort(field)}
+        aria-sort={active ? (sortAsc ? 'ascending' : 'descending') : 'none'}
+      >
+        {label}{active ? (sortAsc ? ' ↑' : ' ↓') : ''}
+      </button>
+    )
+  }
+
+  return (
+    <div className={styles.ocrTableWrapper}>
+      <table className={styles.ocrTable} aria-label="OCR field accuracy">
+        <thead>
+          <tr>
+            <th><SortBtn field="merchant" label="Merchant" /></th>
+            <th><SortBtn field="field" label="Field" /></th>
+            <th><SortBtn field="accuracy" label="Accuracy" /></th>
+            <th>Samples</th>
+          </tr>
+        </thead>
+        <tbody>
+          {combined.map(row => (
+            <tr key={`${row.merchant}-${row.field}`}>
+              <td>{row.merchant || '—'}</td>
+              <td>{row.field}</td>
+              <td>
+                {row.insufficientData
+                  ? <span className={styles.ocrInsufficient}>Not enough data yet</span>
+                  : (
+                    <span className={
+                      (row.accuracyRate ?? 1) >= 0.9
+                        ? styles.ocrGood
+                        : (row.accuracyRate ?? 1) >= 0.7
+                          ? styles.ocrMedium
+                          : styles.ocrPoor
+                    }>
+                      {((row.accuracyRate ?? 0) * 100).toFixed(1)}%
+                    </span>
+                  )
+                }
+              </td>
+              <td>{row.sampleSize}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 // ── Trend chart ───────────────────────────────────────────────────────────────
 
@@ -174,6 +268,7 @@ function MerchantDetailPanel({ name, dateFrom, dateTo, onClose }: MerchantDetail
 
 export default function AnalyticsPage() {
   const [tab, setTab] = useState<Tab>('trends')
+  const [session, setSession] = useState<SessionResponse | null>(null)
 
   // ── Trends state
   const [trendData, setTrendData] = useState<CategoryTrendResponse | null>(null)
@@ -190,6 +285,16 @@ export default function AnalyticsPage() {
   const [dateTo, setDateTo] = useState('')
   const [openMerchant, setOpenMerchant] = useState<string | null>(null)
 
+  // ── OCR accuracy state (Owner only)
+  const [ocrData, setOcrData] = useState<OcrAccuracyResponse | null>(null)
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrError, setOcrError] = useState<string | null>(null)
+
+  // Load session once on mount
+  useEffect(() => {
+    getSession().then(setSession).catch(() => { /* non-critical */ })
+  }, [])
+
   // Load trends whenever months or category changes
   useEffect(() => {
     void loadTrends()
@@ -203,6 +308,19 @@ export default function AnalyticsPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
+
+  // Load OCR accuracy when tab becomes active (Admin only)
+  useEffect(() => {
+    if (tab === 'ocr-accuracy' && session?.role === 'Admin' && !ocrData && !ocrLoading) {
+      setOcrLoading(true)
+      setOcrError(null)
+      getOcrAccuracy()
+        .then(setOcrData)
+        .catch(err => setOcrError(err instanceof Error ? err.message : 'Failed to load OCR accuracy.'))
+        .finally(() => setOcrLoading(false))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, session])
 
   async function loadTrends() {
     setTrendLoading(true)
@@ -266,6 +384,16 @@ export default function AnalyticsPage() {
         >
           Merchant Analytics
         </button>
+        {session?.role === 'Admin' && (
+          <button
+            role="tab"
+            aria-selected={tab === 'ocr-accuracy'}
+            className={`${styles.tab} ${tab === 'ocr-accuracy' ? styles.tabActive : ''}`}
+            onClick={() => setTab('ocr-accuracy')}
+          >
+            OCR Accuracy
+          </button>
+        )}
       </div>
 
       {/* ── Trends tab ──────────────────────────────────────────────── */}
@@ -375,6 +503,24 @@ export default function AnalyticsPage() {
               ))}
             </ol>
           )}
+        </section>
+      )}
+
+      {/* ── OCR Accuracy tab (Admin only) ────────────────────────────── */}
+      {tab === 'ocr-accuracy' && session?.role === 'Admin' && (
+        <section aria-labelledby="ocr-accuracy-heading">
+          <h2 id="ocr-accuracy-heading" className={styles.sectionTitle}>OCR Field Accuracy</h2>
+          <p className={styles.ocrSectionHint}>
+            Tracks per-field correction rates per merchant. Rows with fewer than 5 samples are shown at the bottom.
+            Sort by Accuracy ascending to see worst performers first.
+          </p>
+          {ocrError && <p role="alert" className={styles.error}>{ocrError}</p>}
+          {ocrLoading
+            ? <p className={styles.loadingText}>Loading OCR accuracy data…</p>
+            : ocrData
+              ? <OcrAccuracyTable data={ocrData} />
+              : null
+          }
         </section>
       )}
     </main>

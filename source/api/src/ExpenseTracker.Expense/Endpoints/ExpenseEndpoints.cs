@@ -1,4 +1,5 @@
 using System.Text;
+using ExpenseTracker.Audit.Services;
 using ExpenseTracker.Expense.Models;
 using ExpenseTracker.Expense.Services;
 using ExpenseTracker.Shared;
@@ -81,6 +82,10 @@ public static class ExpenseEndpoints
         // ── Export ────────────────────────────────────────────────────────────
         group.MapGet("/export", HandleExport)
             .WithSummary("Stream expenses as CSV for the given date range");
+
+        // ── Intelligence ──────────────────────────────────────────────────────
+        group.MapPost("/{id:guid}/dismiss-duplicate", HandleDismissDuplicate)
+            .WithSummary("Dismiss a duplicate warning for this expense — suppresses future warnings");
 
         return app;
     }
@@ -423,6 +428,33 @@ public static class ExpenseEndpoints
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
             return $"\"{value.Replace("\"", "\"\"")}\"";
         return value;
+    }
+
+    // ── Intelligence handlers ─────────────────────────────────────────────────
+
+    private static async Task<IResult> HandleDismissDuplicate(
+        Guid id,
+        IIntelligenceService intelligenceService,
+        IAuditService auditService,
+        HttpContext ctx,
+        CancellationToken ct)
+    {
+        var userId = GetUserId(ctx);
+        if (userId is null) return Results.Problem("Session invalid.", statusCode: 401);
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        await intelligenceService.DismissDuplicateAsync(id, userId.Value, ct);
+
+        await auditService.LogAsync(new ExpenseTracker.Audit.Models.WriteAuditLogRequest(
+            UserId: userId.Value,
+            Action: "DUPLICATE_DISMISS",
+            ResourceType: "EXPENSE",
+            ResourceId: id,
+            BeforeJson: null,
+            AfterJson: null,
+            IpAddress: ip), ct);
+
+        return Results.NoContent();
     }
 
     // ── Session helpers ───────────────────────────────────────────────────────

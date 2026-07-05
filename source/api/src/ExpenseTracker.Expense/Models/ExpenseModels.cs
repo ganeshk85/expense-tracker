@@ -89,7 +89,14 @@ public sealed record ExpenseResponse(
     IReadOnlyList<ReceiptSummaryResponse> Receipts,
     IReadOnlyList<ExpenseAttachmentResponse> Attachments,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    // Set by Intelligence layer on create/get; null when no pending duplicate.
+    public DuplicateWarning? DuplicateWarning { get; init; }
+    // Set by Intelligence layer on OCR correction; null for manual expenses.
+    public string? SuggestedCategory { get; init; }
+    public string? SuggestionConfidence { get; init; }
+}
 
 // ── Attachment models ────────────────────────────────────────────────────────
 
