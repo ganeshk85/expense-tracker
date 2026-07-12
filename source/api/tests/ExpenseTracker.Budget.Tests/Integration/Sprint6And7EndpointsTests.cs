@@ -244,9 +244,11 @@ public sealed class Sprint6And7WebAppFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
-            var dbDescriptor = services.SingleOrDefault(
-                d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
-            if (dbDescriptor is not null) services.Remove(dbDescriptor);
+            // EF Core registers the Npgsql provider via composable IDbContextOptionsConfiguration<T>
+            // entries, not just DbContextOptions<T> — removing only the latter leaves the Npgsql
+            // configuration in place, so both providers end up registered once InMemory is added.
+            services.RemoveAll<DbContextOptions<AppDbContext>>();
+            services.RemoveAll(typeof(IDbContextOptionsConfiguration<AppDbContext>));
 
             // Each factory instance gets its own isolated database.
             services.AddDbContext<AppDbContext>(opts =>

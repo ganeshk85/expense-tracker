@@ -16,8 +16,9 @@ def settings(tmp_path: Path) -> Settings:
     return Settings(
         redis_url="redis://localhost:6379",
         api_base_url="http://localhost:5000",
-        storage_receipts_path=str(tmp_path / "receipts"),
-        storage_thumbnails_path=str(tmp_path / "thumbnails"),
+        # storage_receipts_path/storage_thumbnails_path are derived @property values on
+        # Settings, not real fields — set the base path they're computed from instead.
+        storage_base_path=str(tmp_path),
     )
 
 
@@ -40,8 +41,11 @@ def test_generate_thumbnail_creates_file(worker: ThumbnailWorker, tmp_path: Path
     receipt_id = "test-receipt-001"
     dest = worker._generate_thumbnail(receipt_id, str(src))
 
-    assert Path(dest).exists()
-    with Image.open(dest) as img:
+    # _generate_thumbnail intentionally returns a path relative to storage_base_path
+    # (so the API can store it portably) — resolve it before opening.
+    abs_dest = Path(worker._settings.storage_base_path) / dest
+    assert abs_dest.exists()
+    with Image.open(abs_dest) as img:
         assert img.width <= 300
         assert img.height <= 400
 
@@ -54,7 +58,8 @@ def test_generate_thumbnail_converts_rgba(worker: ThumbnailWorker, tmp_path: Pat
 
     dest = worker._generate_thumbnail("rgba-test", str(src))
 
-    with Image.open(dest) as result:
+    abs_dest = Path(worker._settings.storage_base_path) / dest
+    with Image.open(abs_dest) as result:
         assert result.mode == "RGB"
 
 
@@ -72,4 +77,5 @@ async def test_notify_api_calls_patch(worker: ThumbnailWorker) -> None:
         mock_client.patch.assert_called_once_with(
             "http://localhost:5000/receipts/receipt-123/thumbnail",
             json={"thumbnailPath": "/storage/thumbnails/receipt-123.jpg"},
+            headers={"X-Internal-Key": worker._settings.internal_api_key},
         )

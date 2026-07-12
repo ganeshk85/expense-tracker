@@ -130,6 +130,7 @@ builder.Services.AddScoped<IIntelligenceService, IntelligenceService>();
 // Intelligence Redis background consumers
 builder.Services.AddHostedService<ExpenseConfirmedConsumerService>();
 builder.Services.AddHostedService<OcrCorrectionConsumerService>();
+builder.Services.AddHostedService<RecurringExpenseDetectionService>();
 
 // Modules
 builder.Services.AddAuthModule();
@@ -145,10 +146,15 @@ builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 // Apply pending EF Core migrations on startup. Idempotent — skips already-applied migrations.
+// Migrations are relational-only; the in-memory provider used by integration tests has no
+// migration concept, so it just needs the schema created instead.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
+    if (db.Database.IsRelational())
+        await db.Database.MigrateAsync();
+    else
+        await db.Database.EnsureCreatedAsync();
 }
 
 // Global exception handler

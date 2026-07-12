@@ -29,9 +29,9 @@ def settings(tmp_path: Path) -> Settings:
     return Settings(
         redis_url="redis://localhost:6379",
         api_base_url="http://localhost:5000",
-        storage_receipts_path=str(tmp_path / "receipts"),
-        storage_thumbnails_path=str(tmp_path / "thumbnails"),
-        storage_ocr_json_path=str(tmp_path / "ocr-json"),
+        # storage_receipts_path/storage_thumbnails_path/storage_ocr_json_path are derived
+        # @property values on Settings, not real fields — set the base path instead.
+        storage_base_path=str(tmp_path),
     )
 
 
@@ -202,13 +202,14 @@ def test_write_raw_ocr_creates_file(worker: OcrWorker, tmp_path: Path) -> None:
         "height": [20, 20],
         "line_num": [1, 2],
     }
-    path = worker._write_raw_ocr("receipt-abc", fake_tess_data, "Hello World")
+    path = worker._write_raw_ocr("receipt-abc", fake_tess_data, "Hello World", {})
 
     dest = Path(path)
     assert dest.exists()
     data = json.loads(dest.read_text())
     assert data["fullText"] == "Hello World"
     assert data["text"] == ["Hello", "World"]
+    assert data["fieldRegions"] == {}
 
 
 # ── Consumer loop — Redis mock ─────────────────────────────────────────────────
@@ -293,15 +294,170 @@ async def test_process_publishes_error_on_pipeline_failure(
     worker._redis.xadd = fake_xadd
     worker._redis.xack = fake_xack
 
-    # _run_pipeline will raise because the file doesn't exist.
-    await worker._process("2-0", {"payload": payload})
+    # _run_pipeline will raise because the file doesn't exist. Retries wait 10s/30s for
+    # real (_RETRY_DELAYS) — patch asyncio.sleep so this test doesn't take 40+ seconds,
+    # and each retry attempt also publishes a "processing (retry N of 3)" status message.
+    with patch("src.ocr_worker.asyncio.sleep", new=AsyncMock()):
+        await worker._process("2-0", {"payload": payload})
 
-    assert len(published) == 1
-    _, fields = published[0]
+    assert len(published) == 3  # 2 retry-status messages + 1 final ocr_failed  # noqa: PLR2004
+    _, fields = published[-1]
     result_data = json.loads(fields["payload"])
     assert result_data["status"] == "ocr_failed"
     assert result_data["receiptId"] == "receipt-fail"
     assert result_data["errorMessage"] is not None
+
+
+# ── Template-guided extraction (US-INT-05) ─────────────────────────────────────
+
+
+def test_box_to_normalized_region(worker: OcrWorker) -> None:
+    region = worker._box_to_normalized_region((100, 50, 200, 40), img_w=1000, img_h=1000)
+    assert region == {"regionX": 0.1, "regionY": 0.05, "regionW": 0.2, "regionH": 0.04}
+
+
+def test_fetch_templates_returns_empty_dict_on_failure(worker: OcrWorker) -> None:
+    """Network/API failures must not break OCR — fall back to full-image only."""
+    with patch("src.ocr_worker.httpx.Client", side_effect=RuntimeError("connection refused")):
+        result = worker._fetch_templates("woolworths")
+    assert result == {}
+
+
+def test_fetch_templates_parses_items_keyed_by_field(worker: OcrWorker) -> None:
+    fake_response = MagicMock()
+    fake_response.json.return_value = {
+        "items": [
+            {
+                "merchantNameNormalized": "woolworths",
+                "fieldName": "merchantName",
+                "regionX": 0.1, "regionY": 0.05, "regionW": 0.3, "regionH": 0.06,
+                "sampleCount": 7,
+                "lastUpdated": "2026-09-01T00:00:00Z",
+            }
+        ]
+    }
+    fake_response.raise_for_status.return_value = None
+
+    fake_client = MagicMock()
+    fake_client.get.return_value = fake_response
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+
+    with patch("src.ocr_worker.httpx.Client", return_value=fake_client):
+        result = worker._fetch_templates("woolworths")
+
+    assert "merchantName" in result
+    assert result["merchantName"]["sampleCount"] == 7  # noqa: PLR2004
+
+
+def test_run_targeted_pass_uses_template_region(worker: OcrWorker) -> None:
+    """Crop bounds should derive from the template region scaled to image size."""
+    preprocessed = np.ones((1000, 800), dtype=np.uint8) * 255
+    template: dict[str, Any] = {"regionX": 0.1, "regionY": 0.05, "regionW": 0.3, "regionH": 0.06}
+
+    fake_tess_data = {
+        "text": ["SUPERMART", ""],
+        "conf": [92, -1],
+    }
+    with patch("src.ocr_worker.pytesseract.image_to_data", return_value=fake_tess_data):
+        name, conf = worker._run_targeted_pass(preprocessed, template, img_w=800, img_h=1000)
+
+    assert name == "SUPERMART"
+    assert conf == 92  # noqa: PLR2004
+
+
+def test_run_targeted_pass_returns_none_when_region_empty(worker: OcrWorker) -> None:
+    preprocessed = np.ones((100, 100), dtype=np.uint8) * 255
+    # Region outside image bounds collapses to an empty crop.
+    template: dict[str, Any] = {"regionX": 1.5, "regionY": 1.5, "regionW": 0.1, "regionH": 0.1}
+
+    name, conf = worker._run_targeted_pass(preprocessed, template, img_w=100, img_h=100)
+
+    assert name is None
+    assert conf == 0
+
+
+def test_run_pipeline_uses_targeted_result_when_more_confident(
+    worker: OcrWorker, tmp_path: Path
+) -> None:
+    """
+    End-to-end template-guided extraction: with a stored template (sample_count >= 5)
+    and a targeted-pass confidence higher than the full-image pass, the pipeline
+    should adopt the targeted merchant name/confidence and log the selection.
+    """
+    (tmp_path / "ocr-json").mkdir(parents=True, exist_ok=True)
+    receipt_path = make_receipt_image(tmp_path, ["supermart", "Total: $25.00", "2026-01-15"])
+
+    # Full-image pass: low-confidence merchant read.
+    full_tess_data = {
+        "text": ["supermart", "Total:", "$25.00", "2026-01-15"],
+        "conf": [55, 90, 90, 90],
+        "top": [10, 40, 40, 70],
+        "left": [20, 20, 80, 20],
+        "width": [90, 40, 50, 90],
+        "height": [20, 20, 20, 20],
+        "line_num": [1, 2, 2, 3],
+    }
+    stored_template = {
+        "merchantNameNormalized": "supermart",
+        "fieldName": "merchantName",
+        "regionX": 0.03, "regionY": 0.01, "regionW": 0.15, "regionH": 0.02,
+        "sampleCount": 6,
+        "lastUpdated": "2026-09-01T00:00:00Z",
+    }
+
+    with (
+        patch("src.ocr_worker.pytesseract.image_to_data", return_value=full_tess_data),
+        patch.object(worker, "_fetch_templates", return_value={"merchantName": stored_template}) as fetch_mock,
+        patch.object(worker, "_run_targeted_pass", return_value=("SUPERMART INC", 95)) as targeted_mock,
+        patch.object(worker, "_scan_barcode", return_value=(None, None)),
+    ):
+        result = worker._run_pipeline("receipt-template-test", str(receipt_path))
+
+    fetch_mock.assert_called_once()
+    targeted_mock.assert_called_once()
+    assert result["merchantName"] == "SUPERMART INC"
+    assert result["confidence"]["merchantName"] == 95  # noqa: PLR2004
+
+    # Raw OCR JSON should carry the full-image region so a future confirmation can update the template.
+    raw = json.loads(Path(result["rawOcrPath"]).read_text())
+    assert "merchantName" in raw["fieldRegions"]
+
+
+def test_run_pipeline_keeps_full_image_result_when_template_less_confident(
+    worker: OcrWorker, tmp_path: Path
+) -> None:
+    """If the targeted pass is less confident than the full-image pass, keep the full-image result."""
+    (tmp_path / "ocr-json").mkdir(parents=True, exist_ok=True)
+    receipt_path = make_receipt_image(tmp_path, ["SUPERMART", "Total: $25.00", "2026-01-15"])
+
+    full_tess_data = {
+        "text": ["SUPERMART", "Total:", "$25.00", "2026-01-15"],
+        "conf": [92, 90, 90, 90],
+        "top": [10, 40, 40, 70],
+        "left": [20, 20, 80, 20],
+        "width": [90, 40, 50, 90],
+        "height": [20, 20, 20, 20],
+        "line_num": [1, 2, 2, 3],
+    }
+    stored_template = {
+        "merchantNameNormalized": "supermart",
+        "fieldName": "merchantName",
+        "regionX": 0.03, "regionY": 0.01, "regionW": 0.15, "regionH": 0.02,
+        "sampleCount": 6,
+        "lastUpdated": "2026-09-01T00:00:00Z",
+    }
+
+    with (
+        patch("src.ocr_worker.pytesseract.image_to_data", return_value=full_tess_data),
+        patch.object(worker, "_fetch_templates", return_value={"merchantName": stored_template}),
+        patch.object(worker, "_run_targeted_pass", return_value=("SUPERMAR7", 40)),
+        patch.object(worker, "_scan_barcode", return_value=(None, None)),
+    ):
+        result = worker._run_pipeline("receipt-template-test-2", str(receipt_path))
+
+    assert result["merchantName"] == "SUPERMART"
+    assert result["confidence"]["merchantName"] == 92  # noqa: PLR2004
 
 
 @pytest.mark.asyncio()

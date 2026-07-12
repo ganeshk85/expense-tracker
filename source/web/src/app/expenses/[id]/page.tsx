@@ -231,10 +231,14 @@ export default function ExpenseDetailPage({
 
   const computedItemsTotal = itemsTotal(items)
   const parsedTotal = parseFloat(total) || 0
+  // Line items are pre-tax amounts, so they reconcile against the subtotal, not the
+  // tax-inclusive total. Fall back to total when no subtotal was captured.
+  const parsedSubtotal = parseFloat(subtotal) || 0
+  const reconcileTarget = parsedSubtotal > 0 ? parsedSubtotal : parsedTotal
   const showTotalMismatch =
     items.length > 0 &&
-    parsedTotal > 0 &&
-    Math.abs(computedItemsTotal - parsedTotal) > 0.01
+    reconcileTarget > 0 &&
+    Math.abs(computedItemsTotal - reconcileTarget) > 0.01
 
   // ── Tag helpers ──────────────────────────────────────────────────────────────
 
@@ -561,7 +565,12 @@ export default function ExpenseDetailPage({
       )}
 
       {duplicateWarning && (
-        <div role="alert" className={styles.duplicateBanner}>
+        <div
+          role="alert"
+          className={`${styles.duplicateBanner} ${
+            duplicateWarning.confidence === 'high' ? styles.duplicateBannerHigh : ''
+          }`}
+        >
           <span className={styles.duplicateBannerIcon}>⚠</span>
           <div className={styles.duplicateBannerText}>
             This looks like a {duplicateWarning.confidence === 'high' ? 'likely' : 'possible'} duplicate
@@ -911,7 +920,7 @@ export default function ExpenseDetailPage({
 
               {showTotalMismatch && (
                 <p className={styles.totalWarning}>
-                  ⚠ Line items total (${computedItemsTotal.toFixed(2)}) does not match the expense total (${parsedTotal.toFixed(2)}). Save will proceed — update either value to reconcile.
+                  ⚠ Line items total (${computedItemsTotal.toFixed(2)}) does not match the subtotal (${reconcileTarget.toFixed(2)}). Save will proceed — update either value to reconcile.
                 </p>
               )}
             </>

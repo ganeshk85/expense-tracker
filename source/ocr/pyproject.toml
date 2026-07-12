@@ -29,6 +29,12 @@ dev = [
     "mypy>=1.13.0",
 ]
 
+[tool.pytest.ini_options]
+# Without this, `from src.xxx import ...` in the test files fails with
+# ModuleNotFoundError unless the package has been `pip install -e`'d first —
+# this makes `pytest` work directly from source/ocr/ with no install step.
+pythonpath = ["."]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

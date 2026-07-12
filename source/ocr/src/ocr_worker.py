@@ -28,15 +28,21 @@ from pathlib import Path
 from typing import Any
 
 import cv2
+import httpx
 import numpy as np
 import pytesseract
 import redis.asyncio as aioredis
-from redis.exceptions import TimeoutError as RedisTimeoutError
 from PIL import Image
 from pytesseract import Output
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from .config import Settings
 from .merchant_normalizer import normalize_merchant
+
+# Minimum confirmed samples before a stored template is trusted for a targeted pass.
+_MIN_TEMPLATE_SAMPLES = 5
+# --oem 1 = LSTM engine only  --psm 7 = treat image as a single line (targeted crop is one field)
+_TESS_CROP_CONFIG = "--oem 1 --psm 7"
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +241,7 @@ class OcrWorker:
         lines = self._build_lines(tess_data)
 
         # 5. Parse structured fields.
-        merchant_name, merchant_conf = self._extract_merchant(tess_data, lines)
+        merchant_name, merchant_conf, merchant_box = self._extract_merchant(tess_data, lines)
         date_str, date_conf = self._extract_date(full_text)
         time_str = self._extract_time(full_text)
         total, total_conf = self._extract_amount(_TOTAL_PATTERN, full_text)
@@ -243,12 +249,42 @@ class OcrWorker:
         tax_amount, _ = self._extract_amount(_TAX_PATTERN, full_text)
         line_items = self._extract_line_items(lines)
 
-        # 6. Write raw OCR JSON.
-        raw_ocr_path = self._write_raw_ocr(receipt_id, tess_data, full_text)
+        merchant_name_normalized = normalize_merchant(merchant_name)
+
+        # 5b. Template-guided re-extraction (US-INT-05): if this merchant has a stored
+        # field-position template with enough confirmed samples, run a second, targeted
+        # Tesseract pass on the cropped region and use it if it beats the full-image result.
+        img_h, img_w = preprocessed.shape[:2]
+        field_regions: dict[str, dict[str, float]] = {}
+        if merchant_name_normalized and merchant_box is not None:
+            field_regions["merchantName"] = self._box_to_normalized_region(
+                merchant_box, img_w, img_h
+            )
+
+        templates = (
+            self._fetch_templates(merchant_name_normalized) if merchant_name_normalized else {}
+        )
+        merchant_template = templates.get("merchantName")
+        sample_count = merchant_template.get("sampleCount", 0) if merchant_template else 0
+        if merchant_template is not None and sample_count >= _MIN_TEMPLATE_SAMPLES:
+            targeted_name, targeted_conf = self._run_targeted_pass(
+                preprocessed, merchant_template, img_w, img_h
+            )
+            selected = "template" if targeted_conf > merchant_conf else "full_image"
+            logger.info(
+                "template_extraction merchant=%s field=merchantName template_confidence=%d "
+                "full_confidence=%d selected=%s",
+                merchant_name_normalized, targeted_conf, merchant_conf, selected,
+            )
+            if selected == "template" and targeted_name:
+                merchant_name = targeted_name
+                merchant_conf = targeted_conf
+                merchant_name_normalized = normalize_merchant(merchant_name)
+
+        # 6. Write raw OCR JSON (includes field regions for the confirmation-feedback loop).
+        raw_ocr_path = self._write_raw_ocr(receipt_id, tess_data, full_text, field_regions)
 
         barcode_data, barcode_type = barcode
-
-        merchant_name_normalized = normalize_merchant(merchant_name)
 
         return {
             "receiptId": receipt_id,
@@ -386,39 +422,128 @@ class OcrWorker:
 
     def _extract_merchant(
         self, tess_data: dict[str, list[Any]], lines: list[str]
-    ) -> tuple[str | None, int]:
+    ) -> tuple[str | None, int, tuple[int, int, int, int] | None]:
         """
         Merchant name heuristic: largest-font text in the top 15% of the image.
         Falls back to the first non-empty line if no large-font text is found.
+
+        Returns:
+            (merchant_name, confidence, bounding_box) where bounding_box is
+            (left, top, width, height) in preprocessed-image pixels, or None
+            when the fallback path is used (no per-word position available).
         """
         img_height = max(tess_data["top"]) + 1 if tess_data["top"] else 1
         top_threshold = img_height * 0.15
 
         # Find words in the top 15% with a positive confidence score.
-        candidate_words: list[tuple[int, str, int]] = []
+        candidate_words: list[tuple[int, str, int, int, int, int, int]] = []
         for i, word in enumerate(tess_data["text"]):
             if not word.strip():
                 continue
             conf: int = int(tess_data["conf"][i])
             top: int = tess_data["top"][i]
             height: int = tess_data["height"][i]
+            left: int = tess_data["left"][i]
+            width: int = tess_data["width"][i]
             if top <= top_threshold and conf > 0:
-                candidate_words.append((height, word, conf))
+                candidate_words.append((height, word, conf, left, top, width, top + height))
 
         if not candidate_words:
-            # Fall back to first non-empty line.
+            # Fall back to first non-empty line — no word-level position available.
             if lines:
-                return lines[0][:80], 40
-            return None, 0
+                return lines[0][:80], 40, None
+            return None, 0, None
 
         # Use the tallest (largest font) words as merchant name.
         candidate_words.sort(key=lambda t: t[0], reverse=True)
         max_height = candidate_words[0][0]
-        merchant_words = [w for h, w, _ in candidate_words if h >= max_height * 0.8]
-        confs = [c for h, _, c in candidate_words if h >= max_height * 0.8]
+        selected = [c for c in candidate_words if c[0] >= max_height * 0.8]
+        merchant_words = [w for _, w, _, _, _, _, _ in selected]
+        confs = [c for _, _, c, _, _, _, _ in selected]
         avg_conf = int(sum(confs) / len(confs)) if confs else 0
 
-        return " ".join(merchant_words[:6])[:80], avg_conf
+        box_left = min(c[3] for c in selected)
+        box_top = min(c[4] for c in selected)
+        box_right = max(c[3] + c[5] for c in selected)
+        box_bottom = max(c[6] for c in selected)
+        bounding_box = (box_left, box_top, box_right - box_left, box_bottom - box_top)
+
+        return " ".join(merchant_words[:6])[:80], avg_conf, bounding_box
+
+    # ── Template-guided extraction (US-INT-05) ──────────────────────────────────
+
+    def _box_to_normalized_region(
+        self, box: tuple[int, int, int, int], img_w: int, img_h: int
+    ) -> dict[str, float]:
+        """Convert a (left, top, width, height) pixel box to a 0.0-1.0 normalized region."""
+        left, top, width, height = box
+        return {
+            "regionX": left / img_w if img_w else 0.0,
+            "regionY": top / img_h if img_h else 0.0,
+            "regionW": width / img_w if img_w else 0.0,
+            "regionH": height / img_h if img_h else 0.0,
+        }
+
+    def _fetch_templates(self, merchant_normalized: str) -> dict[str, dict[str, Any]]:
+        """Fetch stored field templates for a merchant via the internal API.
+
+        Returns an empty dict on any failure (network down, no templates, etc.) —
+        the caller falls back to full-image extraction only, matching the "no
+        regression from current behaviour" requirement.
+        """
+        url = f"{self._settings.api_base_url}/internal/merchant-templates/{merchant_normalized}"
+        headers = {"X-Internal-Key": self._settings.internal_api_key}
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                resp = client.get(url, headers=headers)
+                resp.raise_for_status()
+                items = resp.json().get("items", [])
+                return {item["fieldName"]: item for item in items}
+        except Exception:
+            logger.debug(
+                "Template fetch failed for merchant=%s — using full-image only", merchant_normalized
+            )
+            return {}
+
+    def _run_targeted_pass(
+        self,
+        preprocessed: np.ndarray,  # type: ignore[type-arg]
+        template: dict[str, Any],
+        img_w: int,
+        img_h: int,
+    ) -> tuple[str | None, int]:
+        """Crop the stored template region (scaled to this image) and re-run Tesseract on it."""
+        left = int(template["regionX"] * img_w)
+        top = int(template["regionY"] * img_h)
+        width = int(template["regionW"] * img_w)
+        height = int(template["regionH"] * img_h)
+
+        # Pad slightly — the stored region is a weighted average across receipts and may
+        # not align pixel-perfectly with this one.
+        pad_x = max(4, int(width * 0.1))
+        pad_y = max(4, int(height * 0.1))
+        left = max(0, left - pad_x)
+        top = max(0, top - pad_y)
+        right = min(img_w, left + width + 2 * pad_x)
+        bottom = min(img_h, top + height + 2 * pad_y)
+
+        if right <= left or bottom <= top:
+            return None, 0
+
+        crop = preprocessed[top:bottom, left:right]
+        tess_data = pytesseract.image_to_data(
+            crop, config=_TESS_CROP_CONFIG, output_type=Output.DICT
+        )
+
+        words = [w for w in tess_data["text"] if w.strip()]
+        if not words:
+            return None, 0
+
+        confs = [
+            int(c) for w, c in zip(tess_data["text"], tess_data["conf"]) if w.strip() and int(c) > 0
+        ]
+        avg_conf = int(sum(confs) / len(confs)) if confs else 0
+        return " ".join(words[:6])[:80], avg_conf
 
     def _extract_date(self, text: str) -> tuple[str | None, int]:
         """
@@ -483,7 +608,16 @@ class OcrWorker:
         """
         items: list[dict[str, Any]] = []
         for line in lines:
-            m = _LINE_ITEM_PATTERN.match(line.strip())
+            stripped = line.strip()
+            # Skip summary/keyword lines (Subtotal, Total, Tax, etc.) — they match the
+            # generic "description + price" shape but are not purchased line items.
+            if (
+                _TOTAL_PATTERN.search(stripped)
+                or _SUBTOTAL_PATTERN.search(stripped)
+                or _TAX_PATTERN.search(stripped)
+            ):
+                continue
+            m = _LINE_ITEM_PATTERN.match(stripped)
             if m:
                 name = m.group(1)
                 qty_str = m.group(2)   # None when quantity column absent
@@ -559,8 +693,14 @@ class OcrWorker:
         receipt_id: str,
         tess_data: dict[str, list[Any]],
         full_text: str,
+        field_regions: dict[str, dict[str, float]],
     ) -> str:
-        """Persist raw Tesseract output to /storage/ocr-json/<receiptId>.json."""
+        """Persist raw Tesseract output to /storage/ocr-json/<receiptId>.json.
+
+        ``field_regions`` (normalized 0.0-1.0 bounding boxes per field) is read back
+        by the correction consumer when a field is confirmed unchanged, so it can
+        report the region to the merchant-template store (US-INT-05).
+        """
         ocr_dir = Path(self._settings.storage_ocr_json_path)
         ocr_dir.mkdir(parents=True, exist_ok=True)
         dest = ocr_dir / f"{receipt_id}.json"
@@ -571,6 +711,7 @@ class OcrWorker:
             for k, vals in tess_data.items()
         }
         serialisable["fullText"] = full_text
+        serialisable["fieldRegions"] = field_regions
 
         dest.write_text(json.dumps(serialisable, ensure_ascii=False, indent=2))
         return str(dest)

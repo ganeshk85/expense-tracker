@@ -10,6 +10,8 @@ public sealed record MerchantCategoryMapEntry(
 
 public sealed record MerchantCategoryMapResponse(IReadOnlyList<MerchantCategoryMapEntry> Items);
 
+public sealed record CategorySuggestion(string Category, string Confidence); // Confidence: "high" | "low"
+
 // ── Duplicate warning ─────────────────────────────────────────────────────────
 
 public sealed record DuplicateWarning(
@@ -31,3 +33,58 @@ public sealed record OcrFieldAccuracyEntry(
     bool InsufficientData);
 
 public sealed record OcrAccuracyResponse(IReadOnlyList<OcrFieldAccuracyEntry> Items);
+
+// ── Merchant field templates (US-INT-05) ──────────────────────────────────────
+
+public sealed record MerchantFieldTemplateEntry(
+    string MerchantNameNormalized,
+    string FieldName,
+    double RegionX,
+    double RegionY,
+    double RegionW,
+    double RegionH,
+    int SampleCount,
+    DateTimeOffset LastUpdated);
+
+public sealed record MerchantFieldTemplatesResponse(IReadOnlyList<MerchantFieldTemplateEntry> Items);
+
+public sealed record UpsertMerchantTemplateRequest(
+    string MerchantName,
+    string FieldName,
+    double RegionX,
+    double RegionY,
+    double RegionW,
+    double RegionH);
+
+// ── Recurring expenses (US-INT-06) ────────────────────────────────────────────
+
+public sealed record RecurringExpenseEntry(
+    Guid Id,
+    string MerchantNameNormalized,
+    decimal AverageAmount,
+    int TypicalDayOfMonth,
+    string Confidence, // "confirmed" | "likely"
+    DateTimeOffset LastDetectedAt,
+    DateTimeOffset? SnoozedUntil);
+
+public sealed record RecurringExpensesResponse(IReadOnlyList<RecurringExpenseEntry> Items);
+
+// ── Merchant aliases (US-INT-07) ──────────────────────────────────────────────
+
+public sealed record MerchantAliasEntry(
+    Guid Id,
+    string AliasNormalized,
+    string CanonicalNormalized,
+    DateTimeOffset CreatedAt);
+
+public sealed record MerchantAliasesResponse(IReadOnlyList<MerchantAliasEntry> Items);
+
+public sealed record CreateMerchantAliasRequest(string Alias, string Canonical);
+
+// ── Intelligence settings summary (US-INT-08) ─────────────────────────────────
+
+public sealed record IntelligenceSummaryResponse(
+    int MerchantMappings,
+    int FieldTemplates,
+    int RecurringExpenses,
+    int Aliases);

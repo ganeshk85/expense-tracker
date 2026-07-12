@@ -7,13 +7,19 @@ adjusts Tesseract preprocessing configuration when a merchant's accuracy
 drops below ACCURACY_THRESHOLD for any field.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
+import httpx
 import redis.asyncio as aioredis
+
+from .config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +29,11 @@ _CONSUMER = "correction-consumer-1"
 _POLL_INTERVAL_S = 0.5
 ACCURACY_THRESHOLD = 0.70  # 70 % — trigger adaptive preprocessing below this
 
+# Fields tracked for merchant-template region learning (US-INT-05).
+# Only merchantName has a reliable per-word bounding box today — total/date are
+# extracted via regex over concatenated text and don't carry a position yet.
+_TEMPLATE_TRACKED_FIELDS = {"merchantName"}
+
 
 class CorrectionConsumer:
     """Redis stream consumer that tracks OCR field accuracy in memory.
@@ -30,10 +41,15 @@ class CorrectionConsumer:
     The .NET OcrCorrectionConsumerService persists the data to the DB;
     this Python consumer drives the adaptive preprocessing feedback loop
     so the OCR worker can tune its pipeline without a DB round-trip.
+
+    It also feeds the merchant-template store (US-INT-05): when a field is
+    confirmed unchanged, the region recorded at extraction time is posted to
+    the internal API so future receipts from that merchant can use a targeted crop.
     """
 
-    def __init__(self, redis_client: aioredis.Redis) -> None:
+    def __init__(self, redis_client: aioredis.Redis, settings: Settings | None = None) -> None:
         self._redis = redis_client
+        self._settings = settings or Settings()
         # {(merchant_normalized, field): {"extractions": int, "corrections": int}}
         self._accuracy: dict[tuple[str, str], dict[str, int]] = defaultdict(
             lambda: {"extractions": 0, "corrections": 0}
@@ -100,13 +116,20 @@ class CorrectionConsumer:
                 return
 
             payload: dict[str, Any] = json.loads(payload_raw)
+            receipt_id = payload.get("receiptId", "").strip()
             merchant = payload.get("merchantNormalized", "").strip()
             field = payload.get("field", "").strip()
+            is_corrected = bool(payload.get("isCorrected", False))
 
             if merchant and field:
                 key = (merchant, field)
                 self._accuracy[key]["extractions"] += 1
-                self._accuracy[key]["corrections"] += 1
+                if is_corrected:
+                    self._accuracy[key]["corrections"] += 1
+                elif field in _TEMPLATE_TRACKED_FIELDS and receipt_id:
+                    # Field was accepted as-is — feed its extraction region back to the
+                    # merchant-template store so future receipts can use a targeted crop.
+                    await self._report_confirmed_region(receipt_id, merchant, field)
 
                 accuracy = self.get_accuracy(merchant, field)
                 if accuracy is not None and accuracy < ACCURACY_THRESHOLD:
@@ -126,3 +149,40 @@ class CorrectionConsumer:
             logger.exception("Failed to process correction message %s", msg_id)
         finally:
             await self._redis.xack(_STREAM, _GROUP, msg_id)
+
+    async def _report_confirmed_region(self, receipt_id: str, merchant: str, field: str) -> None:
+        """Look up the field's extraction region for this receipt and post it to
+        POST /internal/merchant-templates so the template store learns from it.
+
+        Best-effort: any failure (missing OCR JSON, network down, no region recorded)
+        is logged and swallowed — this must never block accuracy tracking.
+        """
+        try:
+            ocr_json_path = Path(self._settings.storage_ocr_json_path) / f"{receipt_id}.json"
+            if not ocr_json_path.exists():
+                return
+
+            raw = json.loads(ocr_json_path.read_text(encoding="utf-8"))
+            region = raw.get("fieldRegions", {}).get(field)
+            if not region:
+                return
+
+            url = f"{self._settings.api_base_url}/internal/merchant-templates"
+            headers = {"X-Internal-Key": self._settings.internal_api_key}
+            body = {
+                "merchantName": merchant,
+                "fieldName": field,
+                "regionX": region["regionX"],
+                "regionY": region["regionY"],
+                "regionW": region["regionW"],
+                "regionH": region["regionH"],
+            }
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(url, json=body, headers=headers)
+                resp.raise_for_status()
+
+            logger.debug("Reported confirmed region for merchant=%s field=%s", merchant, field)
+        except Exception:
+            logger.exception(
+                "Failed to report confirmed region for receipt=%s field=%s", receipt_id, field
+            )

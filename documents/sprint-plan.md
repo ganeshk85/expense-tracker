@@ -750,18 +750,48 @@ All 37 Phase 2 points delivered. Platform has full budget management, analytics,
 
 ### Sprint 8 Definition of Done
 
-- [ ] When a user confirms an expense for a merchant, the merchant-category mapping is persisted and the confirmed count increments correctly
-- [ ] On the next receipt upload from the same merchant (with confirmed_count >= 3), the category field is pre-filled with the suggested category and displays the "Suggested" badge
-- [ ] Suggestion badge is dismissible; changing the category does not trigger any error
-- [ ] Uploading a receipt with the same merchant, amount, and date as an existing expense shows a duplicate warning banner — save is not blocked
-- [ ] `possible` confidence duplicate (1-day date difference) shows the amber "Possible duplicate" tag; exact match shows the same
-- [ ] Dismissing a duplicate warning calls the dismiss endpoint and suppresses the banner on reload
-- [ ] Tag autocomplete shows merchant-specific tag history first; falls back to household tag frequency
-- [ ] OCR accuracy table is visible to Owner on the analytics page; hidden for other roles
-- [ ] Fields with fewer than 5 samples show "Not enough data yet" rather than a rate
-- [ ] Merchant name normalization produces identical output in the Python worker and the .NET service for the same input string (verified by shared test fixture)
-- [ ] All new endpoints have integration tests
-- [ ] No `console.log` or debug output in committed code
+- [x] When a user confirms an expense for a merchant, the merchant-category mapping is persisted and the confirmed count increments correctly
+- [x] On the next receipt upload from the same merchant (with confirmed_count >= 3), the category field is pre-filled with the suggested category and displays the "Suggested" badge — **was dead code until the 2026-07-05 fix pass (see Review Notes)**
+- [x] Suggestion badge is dismissible; changing the category does not trigger any error
+- [x] Uploading a receipt with the same merchant, amount, and date as an existing expense shows a duplicate warning banner — save is not blocked
+- [x] `possible` confidence duplicate (1-day date difference) shows the amber "Possible duplicate" tag; exact match now gets a distinct red-tinted banner (added 2026-07-05)
+- [x] Dismissing a duplicate warning calls the dismiss endpoint and suppresses the banner on reload — **was broken by an ID mismatch until the 2026-07-05 fix (see Review Notes)**
+- [x] Tag autocomplete shows merchant-specific tag history first; falls back to household tag frequency
+- [x] OCR accuracy table is visible to Owner on the analytics page; hidden for other roles
+- [x] Fields with fewer than 5 samples show "Not enough data yet" rather than a rate — **rate itself was always 0% until the 2026-07-05 fix (see Review Notes)**
+- [x] Merchant name normalization produces identical output in the Python worker and the .NET service for the same input string — algorithms matched, but the shared fixture had 5 wrong entries and was never actually loaded by a test until 2026-07-05
+- [x] All new endpoints have integration tests (added 2026-07-05; HTTP-level runs are currently blocked by a pre-existing test-infra login bug — see Review Notes — but logic is verified via service-level unit tests)
+- [x] No `console.log` or debug output in committed code
+
+---
+
+## Sprint 8 — Review Notes (2026-07-05)
+
+**The DoD above was originally checked off at commit `ff39f9b` without ever being verified — a code-level audit requested before Sprint 9 kickoff found the flagship feature was dead code and the feedback-loop math was broken.** All findings below were fixed before Sprint 9 began.
+
+### What was actually broken (found by reading the code, not by running anything)
+
+| # | Issue | Root cause | Fix |
+|---|-------|-----------|-----|
+| 1 | Category suggestion badge never appeared | `IntelligenceService.GetSuggestedCategoryAsync` existed but was **never called** from `ExpenseService` — the API always returned `suggestedCategory: null` | Wired into `GetByIdAsync`; added a confidence threshold (`confirmed_count >= 3` → `high`, else `low`) via a new `CategorySuggestion` record |
+| 2 | OCR accuracy always showed 0% | `UpsertOcrFieldAccuracyAsync` incremented `TotalExtractions` and `TotalCorrections` together on every call, because the only event source (`ocr.correction`) was only ever emitted for *changed* fields | Correction events now fire for every field on every confirmation (not just changed ones) with an `isCorrected` flag; extractions always increment, corrections only when actually corrected. Same bug existed in both the .NET consumer and the Python `correction_consumer.py` — fixed in both |
+| 3 | Dismissing a duplicate warning didn't suppress it | `DismissDuplicateAsync` recorded the dismissal keyed by the *current* expense's ID, but `CheckDuplicateAsync` checked `IsDismissedAsync` against the *matched/older* expense's ID — different rows, so the dismissal never matched on reload | `CheckDuplicateAsync` now checks dismissal against the current expense's own ID |
+| 4 | Shared merchant-normalization fixture was never validated | `merchant_normalization_fixtures.json` existed but no test in either language loaded it; 5 of 24 entries had incorrect expected values (the whitespace-collapse/trim steps were never applied when the fixture was hand-written) | Fixed the 5 wrong entries; added `MerchantNormalizerFixtureTests.cs` (.NET) and `test_merchant_normalizer.py` (Python), both loading the same fixture file |
+| 5 | Duplicate confidence had no visual distinction | Banner text differed between "high"/"possible" but the CSS was identical | Added `.duplicateBannerHigh` (red-tinted) alongside the existing amber default used for "possible" |
+| 6 | Zero integration test coverage | No test project touched any Sprint 8 endpoint | Added `IntelligenceEndpointsTests.cs` (merchant-map / ocr-accuracy / tag-suggestions role gating, duplicate-detection create/dismiss flow) and `IntelligenceServiceTests.cs` (suggestion confidence thresholds — unit-level, since OCR-sourced `ConfidenceJson` isn't reachable via a public endpoint) |
+
+### Additional pre-existing test-infrastructure bugs found and fixed along the way
+
+These blocked **every** integration test in `ExpenseTracker.Budget.Tests`, including the Sprint 6/7 tests already in the repo — not just the new Sprint 8 ones. The Sprint 7 review notes only ran `dotnet build`, never `dotnet test`, so this had never surfaced:
+
+- EF Core registers the Npgsql provider via composable `IDbContextOptionsConfiguration<T>` entries; the test factory only removed `DbContextOptions<AppDbContext>`, leaving Npgsql's configuration in place alongside the in-memory provider → "two providers registered" startup crash. Fixed by also removing `IDbContextOptionsConfiguration<AppDbContext>`.
+- `Program.cs` unconditionally called `db.Database.MigrateAsync()` on startup, which throws against the in-memory provider (migrations are relational-only). Fixed with an `IsRelational()` guard that falls back to `EnsureCreatedAsync()` — no change to the Postgres/production path.
+
+### Known remaining gap (not fixed — flagging for the next pass)
+
+After both infra fixes, every **login-based** integration test (`POST /auth/login` with a freshly seeded user) returns 401, across the Sprint 6, 7, and 8 test classes alike — meaning the HTTP-level integration test suite has apparently never actually executed successfully in this repo. Root cause not yet found (the Argon2 hash/verify path looks internally consistent on inspection). Logic-level correctness of every Sprint 8 fix above is confirmed via `IntelligenceServiceTests.cs` and `MerchantNormalizerFixtureTests.cs` (36 tests, all passing), but the new `IntelligenceEndpointsTests.cs` HTTP-level tests are currently blocked by this same pre-existing issue as their Sprint 6/7 counterparts.
+
+**Verified build status:** `dotnet build` on `ExpenseTracker.Api` and `ExpenseTracker.Budget.Tests` — 0 errors. Frontend `tsc --noEmit` — no new errors introduced (pre-existing CSS Module warnings on budgets/dashboard/notifications pages unchanged from Sprint 7).
 
 ---
 
@@ -870,18 +900,56 @@ All 37 Phase 2 points delivered. Platform has full budget management, analytics,
 
 ### Sprint 9 Definition of Done
 
-- [ ] After 5+ confirmed receipts for a merchant, the OCR worker uses the stored field-region template for that merchant on subsequent receipts; the targeted crop pass is logged
-- [ ] Deleting a field template via the Intelligence Settings page causes the OCR worker to fall back to full-image scan on the next receipt for that merchant
-- [ ] Nightly job detects merchants appearing in 3 of 4 recent months and writes them to `recurring_expenses`
-- [ ] Recurring expenses page lists detected patterns with correct confidence badges
-- [ ] A recurring expense with no match in the current month (by the 3rd) generates an in-app notification
-- [ ] Snoozed recurring expense suppresses the notification until the snooze period expires
-- [ ] Owner can add a merchant alias; subsequent OCR results and analytics for the alias variant resolve to the canonical merchant name
-- [ ] Merchant alias is applied consistently in merchant-category map lookups, template lookups, and tag history lookups
-- [ ] Intelligence Settings page is inaccessible to Adult Member and Restricted Member roles (redirect with message, not 403 error page)
-- [ ] Summary cards on Intelligence Settings page display accurate counts from the database
-- [ ] All new endpoints have integration tests
-- [ ] No `console.log` or debug output in committed code
+- [x] After 5+ confirmed receipts for a merchant, the OCR worker uses the stored field-region template for that merchant on subsequent receipts; the targeted crop pass is logged — **implemented for the `merchantName` field only** (see Review Notes — `total`/`date` region tracking is a follow-up)
+- [ ] Deleting a field template via the Intelligence Settings page causes the OCR worker to fall back to full-image scan on the next receipt for that merchant — DELETE endpoint and audit log exist; the Intelligence Settings page does not yet expose a template-management UI (only merchant aliases), so this can't be triggered from the UI yet
+- [x] Nightly job detects merchants appearing in 3 of 4 recent months and writes them to `recurring_expenses`
+- [x] Recurring expenses page lists detected patterns with correct confidence badges
+- [ ] A recurring expense with no match in the current month (by the 3rd) generates an in-app notification — **not implemented this sprint** (see Review Notes)
+- [x] Snoozed recurring expense suppresses the notification until the snooze period expires — snooze suppresses the recurring-page listing; there is no notification to suppress yet since the above alert was not built
+- [x] Owner can add a merchant alias; subsequent OCR results and analytics for the alias variant resolve to the canonical merchant name — alias resolution wired into category-suggestion and tag-suggestion lookups
+- [x] Merchant alias is applied consistently in merchant-category map lookups and tag history lookups; template lookups resolve aliases on write (`POST /internal/merchant-templates`) but not yet on the internal GET-by-merchant path used by the OCR worker's template fetch (follow-up)
+- [x] Intelligence Settings page is inaccessible to Adult Member and Restricted Member roles (redirect with message, not 403 error page) — implemented against this codebase's actual roles (`Admin`/`Contributor`/`Reader`, not the `Owner`/`AdultMember`/`RestrictedMember` naming used in this doc)
+- [x] Summary cards on Intelligence Settings page display accurate counts from the database
+- [x] All new endpoints have integration tests — written per convention; HTTP-level runs are blocked by the same pre-existing login bug documented in the Sprint 8 Review Notes (logic verified independently: the internal-key template endpoint test passes end-to-end since it bypasses session login)
+- [x] No `console.log` or debug output in committed code
+
+---
+
+## Sprint 9 — Review Notes (2026-07-05)
+
+Implemented immediately after the Sprint 8 gap-fixing pass, using `/senior-backend`, `/senior-frontend`, and `/senior-ml-engineer`.
+
+**Backend (`ExpenseTracker.Expense` + `ExpenseTracker.Api`):**
+- New entities/tables: `merchant_field_templates`, `recurring_expenses`, `merchant_aliases` (migration `Sprint9IntelligenceSchema`)
+- `IIntelligenceRepository`/`IntelligenceService` extended with template upsert (weighted moving average), recurring-pattern detection (merchant+amount-within-5% clustering across the last 6 months, 3-of-4-months threshold), and alias CRUD + resolution
+- New endpoints under `/intelligence/*` (session-authed, Admin-gated where appropriate) and `/internal/merchant-templates` (`X-Internal-Key`-gated, for the OCR worker)
+- `RecurringExpenseDetectionService` — a new nightly `BackgroundService` mirroring the existing `BudgetResetService` pattern
+- Alias resolution wired into `GetSuggestedCategoryAsync` and `GetTagSuggestionsAsync` (US-INT-07 requirement); **not yet wired into the internal template-fetch-by-merchant path** — a variant merchant name won't yet resolve to its canonical template on the OCR read side, only on the write side
+
+**Frontend (`source/web`):**
+- `/intelligence/recurring` — confidence badges, snooze, collapsed snoozed section, empty state
+- `/settings/intelligence` — Admin-only (client-side redirect to `/dashboard`), four summary cards, merchant-alias table + inline add form with same-value validation
+- Nav sidebar: "Recurring" (all users) and "Intelligence Settings" (Admin-only, session-role-gated)
+- `tsc --noEmit`: no new errors (pre-existing budgets/dashboard/notifications errors unchanged from Sprint 7/8)
+
+**OCR worker (`source/ocr`) — scoped down from the full spec, deliberately:**
+- Per-word bounding boxes were only available for the `merchantName` field (from the existing largest-font-in-top-15% heuristic). `total` and `date` are extracted via regex over concatenated OCR text with no per-word position tracking in the current pipeline — fabricating approximate positions for those under time pressure was rejected in favor of shipping a correct, narrower slice: **template-guided extraction and region-learning are implemented for `merchantName` only**. Extending to `total`/`date` requires tracking word indices during regex matching, noted as follow-up work, not silently skipped.
+- `ocr_worker.py`: computes the merchant bounding box, normalizes it to a 0.0-1.0 region, fetches stored templates via the new internal GET endpoint (`httpx`, 2s timeout, fails open to full-image-only on any error), runs a targeted crop-and-retry Tesseract pass (`--psm 7`) when `sample_count >= 5`, and logs `template_extraction merchant=... field=merchantName template_confidence=... full_confidence=... selected=...` per the spec. Raw OCR JSON now also carries `fieldRegions` so the confirmation step can look the region back up.
+- `correction_consumer.py`: when a `merchantName` correction event arrives with `isCorrected=False` (user accepted the OCR value as-is), it reads the region back out of the receipt's raw OCR JSON and posts it to `/internal/merchant-templates`.
+- Added unit tests (`test_ocr_worker.py`) covering the normalization helper, template-fetch failure/parsing, targeted-pass cropping, and two end-to-end `_run_pipeline` cases (template wins when more confident; full-image result kept when the template pass is less confident) — all via mocks, no live Tesseract/Redis/network required, consistent with this test file's existing conventions.
+- **`pytest` and `ruff check` were run against the project's real `.venv`** (initially blocked in this session by no Python interpreter in the sandbox; the user pointed at `source/ocr/.venv`). This surfaced that the **entire pre-existing OCR test suite had never actually passed** — 34 collection/fixture errors before any of my changes were even reached, all from the same root cause: `test_ocr_worker.py`'s and `test_thumbnail_worker.py`'s `settings` fixtures passed `storage_receipts_path`/`storage_thumbnails_path`/`storage_ocr_json_path` as constructor kwargs, but those are read-only `@property` values on `Settings` derived from `storage_base_path`, not real fields — Pydantic rejected them as "Extra inputs are not permitted". Fixed by passing `storage_base_path=str(tmp_path)` instead in both fixtures.
+- That fix uncovered 5 further pre-existing bugs, all fixed:
+  - `_extract_line_items` had no keyword-line exclusion, so a "Subtotal 6.48" line was parsed as a purchased item — fixed by skipping lines that match the existing `_TOTAL_PATTERN`/`_SUBTOTAL_PATTERN`/`_TAX_PATTERN` regexes before line-item matching (a real, if latent, receipt-parsing bug, not just a test bug)
+  - The retry-backoff test slept for real (10s + 30s) and asserted only 1 published message, but the retry loop also publishes a status message per retry attempt (3 total) — patched `asyncio.sleep` and fixed the assertion
+  - `test_generate_thumbnail_creates_file`/`test_generate_thumbnail_converts_rgba` opened the thumbnail's returned path directly, but `_generate_thumbnail` intentionally returns a path *relative to* `storage_base_path` (so the API can store it portably) — fixed by resolving against `storage_base_path` before opening
+  - `test_notify_api_calls_patch` asserted a call without the `headers` kwarg that `_notify_api` actually sends (`X-Internal-Key`) — fixed the expected call
+- After all fixes: **58 passed, 0 failed.** `ruff check` is clean on the files this session touched; 4 pre-existing `N806` (uppercase local variable) warnings remain in code this session didn't write (`_RETRY_DELAYS`, `_MAX_ATTEMPTS`, `_BLUR_THRESHOLD`, `_CONTRAST_THRESHOLD`), left alone as out of scope.
+
+**Not implemented this sprint (explicitly deferred, not silently dropped):**
+- US-INT-06's monthly notification alert (recurring expense missing by the 3rd) — `recurring_expenses` data model and detection exist, but the notification-emission job does not
+- Intelligence Settings page has no field-template management section yet (aliases only)
+- `total`/`date` field-region tracking for template-guided OCR (merchant-name only, as above)
+- Alias resolution on the OCR worker's template-fetch-by-merchant read path
 
 ---
 
@@ -1029,8 +1097,8 @@ All Phase 3 intelligence features are live: auto-categorization, duplicate detec
 | Sprint 5 | 20 | TBD | TBD | Update after sprint review |
 | Sprint 6 | 21 | 21 | 21 | All 5 stories delivered; integration tests pending |
 | Sprint 7 | 18 | TBD | TBD | Update after sprint review |
-| Sprint 8 | 19 | TBD | TBD | Update after sprint review |
-| Sprint 9 | 19 | TBD | TBD | Update after sprint review |
+| Sprint 8 | 19 | 19 | 19 | Delivered late/incomplete — flagship feature was dead code, fixed 2026-07-05 before Sprint 9 (see Review Notes) |
+| Sprint 9 | 19 | ~15 | 15 | Partial: recurring detection + aliases + settings page complete; template learning scoped to merchant-name field only, monthly recurring-alert notification not built (see Review Notes) |
 | Sprint 10 | 19 | TBD | TBD | Phase 3 complete; Phase 4 scaffold delivered |
 
 **Established velocity:** ~19 pts/sprint (18–21 range, 3-sprint average)

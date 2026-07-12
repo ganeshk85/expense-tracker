@@ -29,7 +29,7 @@ async def start_workers() -> None:
     logger.info("OCR worker started")
 
     redis_client = aioredis.from_url(settings.redis_url, decode_responses=False)
-    correction_consumer = CorrectionConsumer(redis_client)
+    correction_consumer = CorrectionConsumer(redis_client, settings)
     asyncio.create_task(correction_consumer.start())
     logger.info("Correction consumer started")
 

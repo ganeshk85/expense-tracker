@@ -143,6 +143,53 @@ export interface MerchantCategoryMapResponse {
   items: MerchantCategoryMapEntry[]
 }
 
+export interface MerchantFieldTemplateEntry {
+  merchantNameNormalized: string
+  fieldName: string
+  regionX: number
+  regionY: number
+  regionW: number
+  regionH: number
+  sampleCount: number
+  lastUpdated: string
+}
+
+export interface MerchantFieldTemplatesResponse {
+  items: MerchantFieldTemplateEntry[]
+}
+
+export interface RecurringExpenseEntry {
+  id: string
+  merchantNameNormalized: string
+  averageAmount: number
+  typicalDayOfMonth: number
+  confidence: 'confirmed' | 'likely'
+  lastDetectedAt: string
+  snoozedUntil: string | null
+}
+
+export interface RecurringExpensesResponse {
+  items: RecurringExpenseEntry[]
+}
+
+export interface MerchantAliasEntry {
+  id: string
+  aliasNormalized: string
+  canonicalNormalized: string
+  createdAt: string
+}
+
+export interface MerchantAliasesResponse {
+  items: MerchantAliasEntry[]
+}
+
+export interface IntelligenceSummaryResponse {
+  merchantMappings: number
+  fieldTemplates: number
+  recurringExpenses: number
+  aliases: number
+}
+
 export interface ExpenseResponse {
   id: string
   receiptId: string | null

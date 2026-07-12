@@ -99,7 +99,7 @@ public sealed class OcrCorrectionConsumerService(
             await using var scope = scopeFactory.CreateAsyncScope();
             var repo = scope.ServiceProvider.GetRequiredService<IIntelligenceRepository>();
 
-            await repo.UpsertOcrFieldAccuracyAsync(payload.MerchantNormalized, payload.Field, ct);
+            await repo.UpsertOcrFieldAccuracyAsync(payload.MerchantNormalized, payload.Field, payload.IsCorrected, ct);
             await repo.SaveChangesAsync(ct);
 
             logger.LogDebug(
@@ -121,5 +121,6 @@ public sealed class OcrCorrectionConsumerService(
         string MerchantNormalized,
         string Field,
         string? OcrValue,
-        string? CorrectedValue);
+        string? CorrectedValue,
+        bool IsCorrected);
 }

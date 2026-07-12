@@ -202,7 +202,7 @@ public sealed class IntelligenceRepository(AppDbContext db) : IIntelligenceRepos
     // ── OCR accuracy ──────────────────────────────────────────────────────────
 
     public async Task UpsertOcrFieldAccuracyAsync(
-        string merchantNormalized, string fieldName, CancellationToken ct = default)
+        string merchantNormalized, string fieldName, bool isCorrected, CancellationToken ct = default)
     {
         var existing = await db.OcrFieldAccuracies
             .FirstOrDefaultAsync(a =>
@@ -216,13 +216,14 @@ public sealed class IntelligenceRepository(AppDbContext db) : IIntelligenceRepos
                 MerchantNameNormalized = merchantNormalized,
                 FieldName = fieldName,
                 TotalExtractions = 1,
-                TotalCorrections = 1,
+                TotalCorrections = isCorrected ? 1 : 0,
             });
         }
         else
         {
             existing.TotalExtractions++;
-            existing.TotalCorrections++;
+            if (isCorrected)
+                existing.TotalCorrections++;
             existing.LastUpdated = DateTimeOffset.UtcNow;
         }
     }
@@ -240,4 +241,252 @@ public sealed class IntelligenceRepository(AppDbContext db) : IIntelligenceRepos
 
     public async Task SaveChangesAsync(CancellationToken ct = default)
         => await db.SaveChangesAsync(ct);
+
+    // ── Merchant field templates (US-INT-05) ──────────────────────────────────
+
+    public async Task UpsertMerchantTemplateAsync(
+        Guid householdId, string merchantNormalized, string fieldName,
+        double regionX, double regionY, double regionW, double regionH, CancellationToken ct = default)
+    {
+        var existing = await db.MerchantFieldTemplates
+            .FirstOrDefaultAsync(t =>
+                t.HouseholdId == householdId &&
+                t.MerchantNameNormalized == merchantNormalized &&
+                t.FieldName == fieldName, ct);
+
+        if (existing is null)
+        {
+            db.MerchantFieldTemplates.Add(new MerchantFieldTemplate
+            {
+                HouseholdId = householdId,
+                MerchantNameNormalized = merchantNormalized,
+                FieldName = fieldName,
+                RegionX = regionX,
+                RegionY = regionY,
+                RegionW = regionW,
+                RegionH = regionH,
+                SampleCount = 1,
+            });
+        }
+        else
+        {
+            // Weighted moving average: (existing * sampleCount + new) / (sampleCount + 1).
+            var n = existing.SampleCount;
+            existing.RegionX = (existing.RegionX * n + regionX) / (n + 1);
+            existing.RegionY = (existing.RegionY * n + regionY) / (n + 1);
+            existing.RegionW = (existing.RegionW * n + regionW) / (n + 1);
+            existing.RegionH = (existing.RegionH * n + regionH) / (n + 1);
+            existing.SampleCount++;
+            existing.LastUpdated = DateTimeOffset.UtcNow;
+        }
+    }
+
+    public async Task<IReadOnlyList<MerchantFieldTemplate>> GetMerchantTemplatesAsync(
+        Guid householdId, CancellationToken ct = default)
+    {
+        return await db.MerchantFieldTemplates
+            .AsNoTracking()
+            .Where(t => t.HouseholdId == householdId)
+            .OrderBy(t => t.MerchantNameNormalized).ThenBy(t => t.FieldName)
+            .ToListAsync(ct);
+    }
+
+    public async Task<MerchantFieldTemplate?> FindMerchantTemplateAsync(
+        Guid householdId, string merchantNormalized, string fieldName, CancellationToken ct = default)
+    {
+        return await db.MerchantFieldTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t =>
+                t.HouseholdId == householdId &&
+                t.MerchantNameNormalized == merchantNormalized &&
+                t.FieldName == fieldName, ct);
+    }
+
+    public async Task<int> DeleteMerchantTemplatesAsync(
+        Guid householdId, string merchantNormalized, CancellationToken ct = default)
+    {
+        var rows = await db.MerchantFieldTemplates
+            .Where(t => t.HouseholdId == householdId && t.MerchantNameNormalized == merchantNormalized)
+            .ToListAsync(ct);
+
+        db.MerchantFieldTemplates.RemoveRange(rows);
+        return rows.Count;
+    }
+
+    // ── Recurring expenses (US-INT-06) ─────────────────────────────────────────
+
+    public async Task<IReadOnlyList<RecurringExpense>> GetRecurringExpensesAsync(
+        Guid householdId, CancellationToken ct = default)
+    {
+        return await db.RecurringExpenses
+            .AsNoTracking()
+            .Where(r => r.HouseholdId == householdId)
+            .OrderBy(r => r.MerchantNameNormalized)
+            .ToListAsync(ct);
+    }
+
+    public async Task<RecurringExpense?> FindRecurringExpenseAsync(
+        Guid householdId, Guid id, CancellationToken ct = default)
+    {
+        return await db.RecurringExpenses
+            .FirstOrDefaultAsync(r => r.HouseholdId == householdId && r.Id == id, ct);
+    }
+
+    public async Task SnoozeRecurringExpenseAsync(
+        Guid householdId, Guid id, int days, CancellationToken ct = default)
+    {
+        var entry = await db.RecurringExpenses
+            .FirstOrDefaultAsync(r => r.HouseholdId == householdId && r.Id == id, ct);
+
+        if (entry is not null)
+            entry.SnoozedUntil = DateTimeOffset.UtcNow.AddDays(days);
+    }
+
+    public async Task DetectRecurringExpensesAsync(Guid householdId, CancellationToken ct = default)
+    {
+        var since = DateTimeOffset.UtcNow.AddMonths(-6);
+
+        // Expenses have no household FK yet (single-household deployment — see SystemHouseholdId
+        // above), so every expense belongs to the household being scanned.
+        // Pull the raw rows needed for grouping; the merchant/amount/month bucketing itself
+        // is done in memory since it needs per-group statistics EF can't express in one query.
+        var rows = await db.Expenses
+            .AsNoTracking()
+            .Where(e =>
+                e.Date.HasValue &&
+                e.Date.Value >= since &&
+                e.MerchantName != null &&
+                e.Total.HasValue)
+            .Select(e => new { e.MerchantName, e.Total, e.Date })
+            .ToListAsync(ct);
+
+        var now = DateTimeOffset.UtcNow;
+        var recentMonths = Enumerable.Range(0, 4)
+            .Select(i => new DateOnly(now.Year, now.Month, 1).AddMonths(-i))
+            .ToList();
+
+        var byMerchant = rows
+            .Select(r => new
+            {
+                Normalized = ExpenseTracker.Shared.MerchantNormalizer.Normalize(r.MerchantName),
+                r.Total,
+                Month = new DateOnly(r.Date!.Value.Year, r.Date.Value.Month, 1),
+                Day = r.Date.Value.Day,
+            })
+            .Where(r => !string.IsNullOrEmpty(r.Normalized))
+            .GroupBy(r => r.Normalized);
+
+        foreach (var group in byMerchant)
+        {
+            // Cluster by amount within 5% so slightly-varying recurring bills (e.g. utilities) still match.
+            var amountClusters = new List<List<(decimal Amount, DateOnly Month, int Day)>>();
+            foreach (var item in group)
+            {
+                var amount = item.Total!.Value;
+                var cluster = amountClusters.FirstOrDefault(c => Math.Abs(c[0].Amount - amount) <= c[0].Amount * 0.05m);
+                if (cluster is null)
+                {
+                    cluster = [];
+                    amountClusters.Add(cluster);
+                }
+                cluster.Add((amount, item.Month, item.Day));
+            }
+
+            foreach (var cluster in amountClusters)
+            {
+                var monthsPresent = cluster.Select(c => c.Month).Distinct()
+                    .Count(m => recentMonths.Contains(m));
+
+                if (monthsPresent < 3)
+                    continue;
+
+                var confidence = monthsPresent >= 4 ? "confirmed" : "likely";
+                var averageAmount = cluster.Average(c => c.Amount);
+                var typicalDay = (int)cluster.Select(c => (double)c.Day).OrderBy(d => d)
+                    .ElementAt(cluster.Count / 2);
+
+                var existing = await db.RecurringExpenses.FirstOrDefaultAsync(
+                    r => r.HouseholdId == householdId && r.MerchantNameNormalized == group.Key, ct);
+
+                if (existing is null)
+                {
+                    db.RecurringExpenses.Add(new RecurringExpense
+                    {
+                        HouseholdId = householdId,
+                        MerchantNameNormalized = group.Key,
+                        AverageAmount = averageAmount,
+                        TypicalDayOfMonth = typicalDay,
+                        Confidence = confidence,
+                        LastDetectedAt = DateTimeOffset.UtcNow,
+                    });
+                }
+                else
+                {
+                    existing.AverageAmount = averageAmount;
+                    existing.TypicalDayOfMonth = typicalDay;
+                    existing.Confidence = confidence;
+                    existing.LastDetectedAt = DateTimeOffset.UtcNow;
+                }
+            }
+        }
+    }
+
+    // ── Merchant aliases (US-INT-07) ───────────────────────────────────────────
+
+    public async Task<string> ResolveAliasAsync(
+        Guid householdId, string merchantNormalized, CancellationToken ct = default)
+    {
+        var alias = await db.MerchantAliases
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a =>
+                a.HouseholdId == householdId && a.AliasNormalized == merchantNormalized, ct);
+
+        return alias?.CanonicalNormalized ?? merchantNormalized;
+    }
+
+    public async Task<MerchantAlias> CreateAliasAsync(
+        Guid householdId, string aliasNormalized, string canonicalNormalized, Guid createdBy, CancellationToken ct = default)
+    {
+        var entity = new MerchantAlias
+        {
+            HouseholdId = householdId,
+            AliasNormalized = aliasNormalized,
+            CanonicalNormalized = canonicalNormalized,
+            CreatedBy = createdBy,
+        };
+        db.MerchantAliases.Add(entity);
+        return entity;
+    }
+
+    public async Task<IReadOnlyList<MerchantAlias>> GetAliasesAsync(
+        Guid householdId, CancellationToken ct = default)
+    {
+        return await db.MerchantAliases
+            .AsNoTracking()
+            .Where(a => a.HouseholdId == householdId)
+            .OrderBy(a => a.AliasNormalized)
+            .ToListAsync(ct);
+    }
+
+    public async Task DeleteAliasAsync(Guid householdId, Guid id, CancellationToken ct = default)
+    {
+        var entity = await db.MerchantAliases
+            .FirstOrDefaultAsync(a => a.HouseholdId == householdId && a.Id == id, ct);
+
+        if (entity is not null)
+            db.MerchantAliases.Remove(entity);
+    }
+
+    // ── Intelligence summary (US-INT-08) ───────────────────────────────────────
+
+    public async Task<(int MerchantMappings, int FieldTemplates, int RecurringExpenses, int Aliases)> GetSummaryCountsAsync(
+        Guid householdId, CancellationToken ct = default)
+    {
+        var merchantMappings = await db.MerchantCategoryMaps.CountAsync(m => m.HouseholdId == householdId, ct);
+        var fieldTemplates = await db.MerchantFieldTemplates.CountAsync(t => t.HouseholdId == householdId, ct);
+        var recurringExpenses = await db.RecurringExpenses.CountAsync(r => r.HouseholdId == householdId, ct);
+        var aliases = await db.MerchantAliases.CountAsync(a => a.HouseholdId == householdId, ct);
+
+        return (merchantMappings, fieldTemplates, recurringExpenses, aliases);
+    }
 }

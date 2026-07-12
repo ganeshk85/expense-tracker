@@ -4,6 +4,7 @@ using ExpenseTracker.Auth.Repositories;
 using ExpenseTracker.Auth.Services;
 using ExpenseTracker.Shared.Exceptions;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using OtpNet;

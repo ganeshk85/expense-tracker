@@ -32,6 +32,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<DuplicateDismissal> DuplicateDismissals => Set<DuplicateDismissal>();
     public DbSet<MerchantTagHistory> MerchantTagHistories => Set<MerchantTagHistory>();
     public DbSet<OcrFieldAccuracy> OcrFieldAccuracies => Set<OcrFieldAccuracy>();
+    public DbSet<MerchantFieldTemplate> MerchantFieldTemplates => Set<MerchantFieldTemplate>();
+    public DbSet<RecurringExpense> RecurringExpenses => Set<RecurringExpense>();
+    public DbSet<MerchantAlias> MerchantAliases => Set<MerchantAlias>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -223,6 +226,40 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(a => a.FieldName).HasMaxLength(64).IsRequired();
             // One row per (merchant, field).
             e.HasIndex(a => new { a.MerchantNameNormalized, a.FieldName }).IsUnique();
+        });
+
+        modelBuilder.Entity<MerchantFieldTemplate>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.ToTable("merchant_field_templates");
+            e.Property(t => t.MerchantNameNormalized).HasMaxLength(512).IsRequired();
+            e.Property(t => t.FieldName).HasMaxLength(64).IsRequired();
+            e.Property(t => t.LastUpdated).HasDefaultValueSql("now()");
+            // One template row per (household, merchant, field).
+            e.HasIndex(t => new { t.HouseholdId, t.MerchantNameNormalized, t.FieldName }).IsUnique();
+        });
+
+        modelBuilder.Entity<RecurringExpense>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.ToTable("recurring_expenses");
+            e.Property(r => r.MerchantNameNormalized).HasMaxLength(512).IsRequired();
+            e.Property(r => r.AverageAmount).HasColumnType("numeric(18,4)");
+            e.Property(r => r.Confidence).HasMaxLength(16).IsRequired();
+            e.Property(r => r.LastDetectedAt).HasDefaultValueSql("now()");
+            // One detected pattern per (household, merchant) — re-detection updates the existing row.
+            e.HasIndex(r => new { r.HouseholdId, r.MerchantNameNormalized }).IsUnique();
+        });
+
+        modelBuilder.Entity<MerchantAlias>(e =>
+        {
+            e.HasKey(a => a.Id);
+            e.ToTable("merchant_aliases");
+            e.Property(a => a.AliasNormalized).HasMaxLength(512).IsRequired();
+            e.Property(a => a.CanonicalNormalized).HasMaxLength(512).IsRequired();
+            e.Property(a => a.CreatedAt).HasDefaultValueSql("now()");
+            // One canonical mapping per (household, alias) — an alias can't point to two canonicals.
+            e.HasIndex(a => new { a.HouseholdId, a.AliasNormalized }).IsUnique();
         });
     }
 }

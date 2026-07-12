@@ -951,6 +951,21 @@
   color: #d97706;
 }
 
+/* "high" confidence (exact merchant/amount/date match) gets a stronger, more urgent treatment
+   than "possible" (1-day date difference), which keeps the default amber styling above. */
+.duplicateBannerHigh {
+  background-color: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.duplicateBannerHigh .duplicateBannerIcon {
+  color: #dc2626;
+}
+
+.duplicateBannerHigh .duplicateBannerText {
+  color: #991b1b;
+}
+
 .duplicateBannerText {
   flex: 1;
   color: #92400e;

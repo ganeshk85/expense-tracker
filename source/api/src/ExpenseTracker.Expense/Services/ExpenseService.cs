@@ -117,10 +117,11 @@ public sealed class ExpenseService(
 
         var response = await BuildResponseAsync(expense, ct);
 
-        // Attach duplicate warning on load so the FE shows it again if not dismissed.
+        // Attach duplicate warning and category suggestion on load — non-blocking.
         try
         {
             var householdId = await intelligenceRepo.GetHouseholdIdForUserAsync(userId, ct);
+
             var warning = await intelligenceService.CheckDuplicateAsync(
                 householdId,
                 expense.MerchantName,
@@ -131,10 +132,25 @@ public sealed class ExpenseService(
 
             if (warning is not null)
                 response = response with { DuplicateWarning = warning };
+
+            // Suggestion only makes sense while OCR results are still pending confirmation
+            // (ConfidenceJson is cleared once the user confirms corrections).
+            if (expense.ConfidenceJson is not null)
+            {
+                var suggestion = await intelligenceService.GetSuggestedCategoryAsync(
+                    householdId, expense.MerchantName, ct);
+
+                if (suggestion is not null)
+                    response = response with
+                    {
+                        SuggestedCategory = suggestion.Category,
+                        SuggestionConfidence = suggestion.Confidence,
+                    };
+            }
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Duplicate check failed on GET for expense {Id}", id);
+            logger.LogWarning(ex, "Intelligence lookups failed on GET for expense {Id}", id);
         }
 
         return response;
@@ -283,13 +299,16 @@ public sealed class ExpenseService(
             var merchantNorm = MerchantNormalizer.Normalize(ocrMerchant ?? expense.MerchantName ?? string.Empty);
             var db = redis.GetDatabase();
 
-            await EmitCorrectionIfChangedAsync(db, receiptId, merchantNorm, "merchantName",
+            // Emit an observation for every field (not just changed ones) — the OCR
+            // accuracy feedback loop needs a signal per extraction, not just per correction,
+            // otherwise TotalExtractions and TotalCorrections always move together.
+            await EmitFieldObservationAsync(db, receiptId, merchantNorm, "merchantName",
                 ocrMerchant, expense.MerchantName, ct);
-            await EmitCorrectionIfChangedAsync(db, receiptId, merchantNorm, "total",
+            await EmitFieldObservationAsync(db, receiptId, merchantNorm, "total",
                 ocrTotal?.ToString(), expense.Total?.ToString(), ct);
-            await EmitCorrectionIfChangedAsync(db, receiptId, merchantNorm, "date",
+            await EmitFieldObservationAsync(db, receiptId, merchantNorm, "date",
                 ocrDate?.ToString("O"), expense.Date?.ToString("O"), ct);
-            await EmitCorrectionIfChangedAsync(db, receiptId, merchantNorm, "category",
+            await EmitFieldObservationAsync(db, receiptId, merchantNorm, "category",
                 ocrCategory, expense.Category, ct);
         }
 
@@ -528,16 +547,37 @@ public sealed class ExpenseService(
     private static void ReplaceItems(
         ExpenseEntity expense, IReadOnlyList<UpdateExpenseItemRequest> items)
     {
-        expense.Items = items
-            .Select(r => new ExpenseItemEntity
+        // Reconcile in place rather than replacing the collection wholesale — expense.Items
+        // is already tracked by EF (loaded via Include), so assigning fresh object instances
+        // for reused IDs makes EF orphan-delete the old tracked row while also trying to
+        // attach the new instance for the same key, causing a concurrency exception.
+        var incomingIds = items.Where(r => r.Id.HasValue).Select(r => r.Id!.Value).ToHashSet();
+
+        expense.Items.RemoveAll(i => !incomingIds.Contains(i.Id));
+
+        foreach (var r in items)
+        {
+            var existing = r.Id.HasValue
+                ? expense.Items.FirstOrDefault(i => i.Id == r.Id.Value)
+                : null;
+
+            if (existing is not null)
             {
-                Id = r.Id ?? Guid.NewGuid(),
-                ExpenseId = expense.Id,
-                Name = r.Name,
-                Quantity = r.Quantity,
-                UnitPrice = r.UnitPrice,
-            })
-            .ToList();
+                existing.Name = r.Name;
+                existing.Quantity = r.Quantity;
+                existing.UnitPrice = r.UnitPrice;
+            }
+            else
+            {
+                expense.Items.Add(new ExpenseItemEntity
+                {
+                    ExpenseId = expense.Id,
+                    Name = r.Name,
+                    Quantity = r.Quantity,
+                    UnitPrice = r.UnitPrice,
+                });
+            }
+        }
     }
 
     private static void ValidateItemRequest(string name, decimal quantity, decimal unitPrice)
@@ -682,7 +722,7 @@ public sealed class ExpenseService(
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private async Task EmitCorrectionIfChangedAsync(
+    private async Task EmitFieldObservationAsync(
         IDatabase db,
         string receiptId,
         string merchantNorm,
@@ -691,8 +731,7 @@ public sealed class ExpenseService(
         string? correctedValue,
         CancellationToken ct)
     {
-        if (string.Equals(ocrValue, correctedValue, StringComparison.Ordinal))
-            return;
+        var isCorrected = !string.Equals(ocrValue, correctedValue, StringComparison.Ordinal);
 
         try
         {
@@ -703,6 +742,7 @@ public sealed class ExpenseService(
                 Field = fieldName,
                 OcrValue = ocrValue,
                 CorrectedValue = correctedValue,
+                IsCorrected = isCorrected,
             }, EventJsonOptions);
 
             await db.StreamAddAsync(
